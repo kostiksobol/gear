@@ -127,7 +127,10 @@ where
         if let GasNode::UnspecifiedLocal { parent, .. } = ret_node {
             ret_id = Some(parent);
             ret_node = Self::get_node(parent).ok_or_else(InternalError::parent_is_lost)?;
-            if !(ret_node.is_external() || ret_node.is_specified_local() || ret_node.is_reserved())
+            if !(ret_node.is_external()
+                || ret_node.is_provision()
+                || ret_node.is_specified_local()
+                || ret_node.is_reserved())
             {
                 return Err(InternalError::unexpected_node_type().into());
             }
@@ -244,14 +247,19 @@ where
         node: &StorageMap::Value,
     ) -> Result<Option<(StorageMap::Value, GasNodeIdOf<Self>)>, Error> {
         match node {
-            GasNode::External { .. } | GasNode::Cut { .. } | GasNode::Reserved { .. } => Ok(None),
+            GasNode::External { .. }
+            | GasNode::Provision { .. }
+            | GasNode::Cut { .. }
+            | GasNode::Reserved { .. } => Ok(None),
             GasNode::SpecifiedLocal { parent, .. } => {
                 let mut ret_id = *parent;
                 let mut ret_node =
                     Self::get_node(*parent).ok_or_else(InternalError::parent_is_lost)?;
                 while !ret_node.is_patron() {
                     match ret_node {
-                        GasNode::External { .. } | GasNode::Reserved { .. } => return Ok(None),
+                        GasNode::External { .. }
+                        | GasNode::Provision { .. }
+                        | GasNode::Reserved { .. } => return Ok(None),
                         GasNode::SpecifiedLocal { parent, .. } => {
                             ret_id = parent;
                             ret_node =
@@ -360,7 +368,9 @@ where
                 StorageMap::remove(node_id);
 
                 match node {
-                    GasNode::External { .. } | GasNode::Reserved { .. } => {
+                    GasNode::External { .. }
+                    | GasNode::Provision { .. }
+                    | GasNode::Reserved { .. } => {
                         if !catch_output.is_caught() {
                             return Err(InternalError::value_is_not_caught().into());
                         }
@@ -527,20 +537,28 @@ where
 
     fn get_origin_node(
         key: impl Into<GasNodeIdOf<Self>>,
-    ) -> Result<(Self::ExternalOrigin, GasNodeIdOf<Self>), Self::Error> {
+    ) -> Result<
+        (
+            Self::ExternalOrigin,
+            Self::ExternalOrigin,
+            GasNodeIdOf<Self>,
+        ),
+        Self::Error,
+    > {
         let key = key.into();
         let node = Self::get_node(key).ok_or_else(InternalError::node_not_found)?;
 
         // key known, must return the origin, unless corrupted
         let (root, maybe_key) = Self::root(node)?;
 
-        if let GasNode::External { id, .. }
-        | GasNode::Cut { id, .. }
-        | GasNode::Reserved { id, .. } = root
-        {
-            Ok((id, maybe_key.unwrap_or(key)))
-        } else {
-            unreachable!("Guaranteed by ValueNode::root method")
+        match root {
+            GasNode::External { id, .. }
+            | GasNode::Cut { id, .. }
+            | GasNode::Reserved { id, .. } => Ok((id.clone(), id, maybe_key.unwrap_or(key))),
+            GasNode::Provision {
+                id, chain_origin, ..
+            } => Ok((id, chain_origin, maybe_key.unwrap_or(key))),
+            _ => unreachable!("Guaranteed by ValueNode::root method"),
         }
     }
 
@@ -614,7 +632,10 @@ where
             StorageMap::remove(key);
 
             match node {
-                GasNode::External { .. } | GasNode::Cut { .. } | GasNode::Reserved { .. } => {
+                GasNode::External { .. }
+                | GasNode::Provision { .. }
+                | GasNode::Cut { .. }
+                | GasNode::Reserved { .. } => {
                     if !catch_output.is_caught() {
                         return Err(InternalError::value_is_not_caught().into());
                     }
