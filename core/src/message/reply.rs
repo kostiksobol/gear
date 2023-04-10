@@ -208,7 +208,6 @@ impl ReplyPacket {
     /// Auto-generated reply after success execution.
     pub fn auto() -> Self {
         Self {
-            status_code: SimpleReplyError::Succeed.into_status_code(),
             gas_limit: Some(0),
             ..Default::default()
         }
