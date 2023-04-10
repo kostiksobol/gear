@@ -160,7 +160,6 @@ fn debug_mode_works() {
             .into(),
         );
 
-
         PalletGear::<Test>::send_message(
             RuntimeOrigin::signed(1),
             program_id_1,

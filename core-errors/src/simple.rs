@@ -73,6 +73,9 @@ impl SimpleExecutionError {
 #[non_exhaustive]
 #[repr(u8)]
 pub enum SimpleReplyError {
+    /// TODO (breathx)
+    #[display(fmt = "No error occurred while executing")]
+    Succeed = 0,
     /// Execution error.
     #[display(fmt = "Execution error: {_0}")]
     Execution(SimpleExecutionError) = 1,
@@ -90,6 +93,7 @@ pub enum SimpleReplyError {
 impl SimpleCodec for SimpleReplyError {
     fn into_status_code(self) -> i32 {
         let first = match self {
+            SimpleReplyError::Succeed => 0,
             SimpleReplyError::Execution(_) => 1,
             SimpleReplyError::NonExecutable => 2,
             SimpleReplyError::OutOfRent => 3,
@@ -111,6 +115,7 @@ impl SimpleCodec for SimpleReplyError {
         let execution = SimpleExecutionError::decode(second)?;
 
         match first {
+            0 => Some(SimpleReplyError::Succeed),
             1 => Some(SimpleReplyError::Execution(execution)),
             2 => Some(SimpleReplyError::NonExecutable),
             3 => Some(SimpleReplyError::OutOfRent),
