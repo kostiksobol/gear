@@ -1534,7 +1534,7 @@ pub mod pallet {
 
             // Creating reply message.
             let message = ReplyMessage::from_packet(
-                MessageId::generate_reply(mailboxed.id(), 0),
+                MessageId::generate_reply(mailboxed.id()),
                 ReplyPacket::new_with_gas(payload, gas_limit, value.unique_saturated_into()),
             );
 

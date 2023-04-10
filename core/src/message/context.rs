@@ -390,7 +390,7 @@ impl MessageContext {
                 packet
             };
 
-            let message_id = MessageId::generate_reply(self.current.id(), packet.status_code());
+            let message_id = MessageId::generate_reply(self.current.id());
             let message = ReplyMessage::from_packet(message_id, packet);
 
             self.outcome.reply = Some((message, delay, reservation));

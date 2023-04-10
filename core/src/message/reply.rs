@@ -64,8 +64,8 @@ impl ReplyMessage {
         payload: Payload,
         simple_err: SimpleReplyError,
     ) -> Self {
+        let id = MessageId::generate_reply(origin_msg_id);
         let status_code = simple_err.into_status_code();
-        let id = MessageId::generate_reply(origin_msg_id, status_code);
         let packet = ReplyPacket::system(payload, status_code);
 
         Self::from_packet(id, packet)

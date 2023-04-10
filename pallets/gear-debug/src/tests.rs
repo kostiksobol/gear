@@ -32,6 +32,8 @@ use pallet_gear::{DebugInfo, Pallet as PalletGear};
 use sp_core::H256;
 use sp_std::collections::btree_map::BTreeMap;
 
+const DEFAULT_SALT: &[u8] = b"salt";
+
 pub(crate) fn init_logger() {
     let _ = env_logger::Builder::from_default_env()
         .format_module_path(false)
@@ -48,11 +50,7 @@ fn parse_wat(source: &str) -> Vec<u8> {
         .to_vec()
 }
 
-fn generate_program_id(code: &[u8]) -> ProgramId {
-    ProgramId::generate(CodeId::generate(code), b"salt")
-}
-
-fn generate_code_hash(code: &[u8]) -> H256 {
+fn h256_code_hash(code: &[u8]) -> H256 {
     CodeId::generate(code).into_origin()
 }
 
@@ -86,13 +84,13 @@ fn debug_mode_works() {
         let code_1 = parse_wat(wat_1);
         let code_2 = parse_wat(wat_2);
 
-        let program_id_1 = generate_program_id(&code_1);
-        let program_id_2 = generate_program_id(&code_2);
+        let program_id_1 = ProgramId::generate(CodeId::generate(&code_1), DEFAULT_SALT);
+        let program_id_2 = ProgramId::generate(CodeId::generate(&code_2), DEFAULT_SALT);
 
         PalletGear::<Test>::upload_program(
             RuntimeOrigin::signed(1),
             code_1.clone(),
-            b"salt".to_vec(),
+            DEFAULT_SALT.to_vec(),
             Vec::new(),
             10_000_000_000_u64,
             0_u128,
@@ -116,7 +114,7 @@ fn debug_mode_works() {
                     state: crate::ProgramState::Active(crate::ProgramInfo {
                         static_pages,
                         persistent_pages: Default::default(),
-                        code_hash: generate_code_hash(&code_1),
+                        code_hash: h256_code_hash(&code_1),
                     }),
                 }],
             })
@@ -126,7 +124,7 @@ fn debug_mode_works() {
         PalletGear::<Test>::upload_program(
             RuntimeOrigin::signed(1),
             code_2.clone(),
-            b"salt".to_vec(),
+            DEFAULT_SALT.to_vec(),
             Vec::new(),
             10_000_000_000_u64,
             0_u128,
@@ -142,25 +140,26 @@ fn debug_mode_works() {
                 dispatch_queue: vec![],
                 programs: vec![
                     crate::ProgramDetails {
-                        id: program_id_2,
-                        state: crate::ProgramState::Active(crate::ProgramInfo {
-                            static_pages,
-                            persistent_pages: Default::default(),
-                            code_hash: generate_code_hash(&code_2),
-                        }),
-                    },
-                    crate::ProgramDetails {
                         id: program_id_1,
                         state: crate::ProgramState::Active(crate::ProgramInfo {
                             static_pages,
                             persistent_pages: Default::default(),
-                            code_hash: generate_code_hash(&code_1),
+                            code_hash: h256_code_hash(&code_1),
+                        }),
+                    },
+                    crate::ProgramDetails {
+                        id: program_id_2,
+                        state: crate::ProgramState::Active(crate::ProgramInfo {
+                            static_pages,
+                            persistent_pages: Default::default(),
+                            code_hash: h256_code_hash(&code_2),
                         }),
                     },
                 ],
             })
             .into(),
         );
+
 
         PalletGear::<Test>::send_message(
             RuntimeOrigin::signed(1),
@@ -218,19 +217,19 @@ fn debug_mode_works() {
                 ],
                 programs: vec![
                     crate::ProgramDetails {
-                        id: program_id_2,
-                        state: crate::ProgramState::Active(crate::ProgramInfo {
-                            static_pages,
-                            persistent_pages: Default::default(),
-                            code_hash: generate_code_hash(&code_2),
-                        }),
-                    },
-                    crate::ProgramDetails {
                         id: program_id_1,
                         state: crate::ProgramState::Active(crate::ProgramInfo {
                             static_pages,
                             persistent_pages: Default::default(),
-                            code_hash: generate_code_hash(&code_1),
+                            code_hash: h256_code_hash(&code_1),
+                        }),
+                    },
+                    crate::ProgramDetails {
+                        id: program_id_2,
+                        state: crate::ProgramState::Active(crate::ProgramInfo {
+                            static_pages,
+                            persistent_pages: Default::default(),
+                            code_hash: h256_code_hash(&code_2),
                         }),
                     },
                 ],
@@ -247,19 +246,19 @@ fn debug_mode_works() {
                 dispatch_queue: vec![],
                 programs: vec![
                     crate::ProgramDetails {
-                        id: program_id_2,
-                        state: crate::ProgramState::Active(crate::ProgramInfo {
-                            static_pages,
-                            persistent_pages: Default::default(),
-                            code_hash: generate_code_hash(&code_2),
-                        }),
-                    },
-                    crate::ProgramDetails {
                         id: program_id_1,
                         state: crate::ProgramState::Active(crate::ProgramInfo {
                             static_pages,
                             persistent_pages: Default::default(),
-                            code_hash: generate_code_hash(&code_1),
+                            code_hash: h256_code_hash(&code_1),
+                        }),
+                    },
+                    crate::ProgramDetails {
+                        id: program_id_2,
+                        state: crate::ProgramState::Active(crate::ProgramInfo {
+                            static_pages,
+                            persistent_pages: Default::default(),
+                            code_hash: h256_code_hash(&code_2),
                         }),
                     },
                 ],
@@ -407,13 +406,13 @@ fn check_not_allocated_pages() {
     init_logger();
     new_test_ext().execute_with(|| {
         let code = parse_wat(wat);
-        let program_id = generate_program_id(&code);
+        let program_id = ProgramId::generate(CodeId::generate(&code), DEFAULT_SALT);
         let origin = RuntimeOrigin::signed(1);
 
         assert_ok!(PalletGear::<Test>::upload_program(
             origin.clone(),
             code.clone(),
-            b"salt".to_vec(),
+            DEFAULT_SALT.to_vec(),
             Vec::new(),
             5_000_000_000_u64,
             0_u128,
@@ -446,7 +445,7 @@ fn check_not_allocated_pages() {
                     state: crate::ProgramState::Active(crate::ProgramInfo {
                         static_pages: 0.into(),
                         persistent_pages: persistent_pages.clone(),
-                        code_hash: generate_code_hash(&code),
+                        code_hash: h256_code_hash(&code),
                     }),
                 }],
             })
@@ -476,7 +475,7 @@ fn check_not_allocated_pages() {
                     state: crate::ProgramState::Active(crate::ProgramInfo {
                         static_pages: 0.into(),
                         persistent_pages: persistent_pages.clone(),
-                        code_hash: generate_code_hash(&code),
+                        code_hash: h256_code_hash(&code),
                     }),
                 }],
             })
@@ -626,7 +625,7 @@ fn check_changed_pages_in_storage() {
     init_logger();
     new_test_ext().execute_with(|| {
         let code = parse_wat(wat);
-        let program_id = generate_program_id(&code);
+        let program_id = ProgramId::generate(CodeId::generate(&code), DEFAULT_SALT);
         let origin = RuntimeOrigin::signed(1);
 
         // Code info. Must be in consensus with wasm code.
@@ -640,7 +639,7 @@ fn check_changed_pages_in_storage() {
         assert_ok!(PalletGear::<Test>::upload_program(
             origin.clone(),
             code.clone(),
-            b"salt".to_vec(),
+            DEFAULT_SALT.to_vec(),
             Vec::new(),
             5_000_000_000_u64,
             0_u128,
@@ -679,7 +678,7 @@ fn check_changed_pages_in_storage() {
                     state: crate::ProgramState::Active(crate::ProgramInfo {
                         static_pages,
                         persistent_pages: persistent_pages.clone(),
-                        code_hash: generate_code_hash(&code),
+                        code_hash: h256_code_hash(&code),
                     }),
                 }],
             })
@@ -715,7 +714,7 @@ fn check_changed_pages_in_storage() {
                     state: crate::ProgramState::Active(crate::ProgramInfo {
                         static_pages,
                         persistent_pages,
-                        code_hash: generate_code_hash(&code),
+                        code_hash: h256_code_hash(&code),
                     }),
                 }],
             })
@@ -763,13 +762,13 @@ fn check_gear_stack_end() {
     init_logger();
     new_test_ext().execute_with(|| {
         let code = parse_wat(wat.as_str());
-        let program_id = generate_program_id(&code);
+        let program_id = ProgramId::generate(CodeId::generate(&code), DEFAULT_SALT);
         let origin = RuntimeOrigin::signed(1);
 
         assert_ok!(PalletGear::<Test>::upload_program(
             origin,
             code.clone(),
-            b"salt".to_vec(),
+            DEFAULT_SALT.to_vec(),
             Vec::new(),
             5_000_000_000_u64,
             0_u128,
@@ -806,7 +805,7 @@ fn check_gear_stack_end() {
                     state: crate::ProgramState::Active(crate::ProgramInfo {
                         static_pages: 4.into(),
                         persistent_pages,
-                        code_hash: generate_code_hash(&code),
+                        code_hash: h256_code_hash(&code),
                     }),
                 }],
             })

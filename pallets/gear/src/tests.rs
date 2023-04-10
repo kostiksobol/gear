@@ -6312,7 +6312,7 @@ fn test_reply_to_terminated_program() {
 
         let mail_id = {
             let original_message_id = get_last_message_id();
-            MessageId::generate_reply(original_message_id, 0)
+            MessageId::generate_reply(original_message_id)
         };
 
         run_to_block(2, None);
@@ -9809,6 +9809,7 @@ fn relay_messages() {
         },
     ]);
 
+    // Order is messed up due to mailbox storing algo.
     let expected = vec![
         Expected {
             user: USER_2,
@@ -9820,11 +9821,11 @@ fn relay_messages() {
         },
         Expected {
             user: USER_3,
-            payload: payload[12..].to_vec(),
+            payload: vec![],
         },
         Expected {
             user: USER_3,
-            payload: vec![],
+            payload: payload[12..].to_vec(),
         },
         Expected {
             user: USER_3,
