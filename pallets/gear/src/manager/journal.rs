@@ -334,6 +334,13 @@ where
                 }
             } else {
                 log::debug!("Sending reply without creating gas node due to provision existence");
+
+                if let Some(reservation_id) = reservation {
+                    Pallet::<T>::remove_gas_reservation_with_task(
+                        dispatch.source(),
+                        reservation_id,
+                    );
+                }
             }
 
             QueueOf::<T>::queue(dispatch)
