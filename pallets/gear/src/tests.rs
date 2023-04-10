@@ -9809,7 +9809,7 @@ fn relay_messages() {
         },
     ]);
 
-    // Order is messed up due to mailbox storing algo.
+    // TODO (breathx): check why changed order.
     let expected = vec![
         Expected {
             user: USER_2,
