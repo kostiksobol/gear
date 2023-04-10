@@ -198,6 +198,11 @@ impl ContextStore {
     pub fn system_reservation(&self) -> Option<u64> {
         self.system_reservation
     }
+
+    /// Get info about was reply sent.
+    pub fn reply_sent(&self) -> bool {
+        self.reply_sent
+    }
 }
 
 /// Context of currently processing incoming message.
