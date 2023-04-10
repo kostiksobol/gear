@@ -138,7 +138,6 @@ pub enum GasNode<ExternalId: Clone, Id: Clone, Balance: Zero + Clone> {
     /// Provision node.
     Provision {
         id: ExternalId,
-        chain_origin: ExternalId,
         value: Balance,
         lock: Balance,
         system_reserve: Balance,

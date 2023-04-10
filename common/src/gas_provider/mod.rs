@@ -100,17 +100,9 @@ pub trait Tree {
     /// Error occurs if the tree is invalidated (has "orphan" nodes), and the
     /// node identified by the `key` belongs to a subtree originating at
     /// such "orphan" node, or in case of inexistent key.
-    #[allow(clippy::type_complexity)]
     fn get_origin_node(
         key: impl Into<GasNodeIdOf<Self>>,
-    ) -> Result<
-        (
-            Self::ExternalOrigin, // external origin: funds donator
-            Self::ExternalOrigin, // chain origin: initial user who was external origin for branch
-            GasNodeIdOf<Self>,
-        ),
-        Self::Error,
-    >;
+    ) -> Result<(Self::ExternalOrigin, GasNodeIdOf<Self>), Self::Error>;
 
     /// The external origin for a key.
     ///
@@ -118,23 +110,14 @@ pub trait Tree {
     fn get_external(
         key: impl Into<GasNodeIdOf<Self>>,
     ) -> Result<Self::ExternalOrigin, Self::Error> {
-        Self::get_origin_node(key).map(|(external, _origin, _key)| external)
-    }
-
-    /// The external origin for a key.
-    ///
-    /// See [`get_origin_node`](Self::get_origin_node) for details.
-    fn get_origin_user(
-        key: impl Into<GasNodeIdOf<Self>>,
-    ) -> Result<Self::ExternalOrigin, Self::Error> {
-        Self::get_origin_node(key).map(|(_external, origin, _key)| origin)
+        Self::get_origin_node(key).map(|(external, _key)| external)
     }
 
     /// The id of external node for a key.
     ///
     /// See [`get_origin_node`](Self::get_origin_node) for details.
     fn get_origin_key(key: impl Into<GasNodeIdOf<Self>>) -> Result<GasNodeIdOf<Self>, Self::Error> {
-        Self::get_origin_node(key).map(|(_external, _origin, key)| key)
+        Self::get_origin_node(key).map(|(_external, key)| key)
     }
 
     /// Get value associated with given id and the key of an ancestor,
@@ -208,6 +191,13 @@ pub trait Tree {
         amount: Self::Balance,
     ) -> Result<(), Self::Error>;
 
+    /// TODO (breathx): add docs.
+    fn provision(
+        key: impl Into<GasNodeIdOf<Self>>,
+        new_key: Self::Key,
+        amount: Self::Balance,
+    ) -> Result<(), Self::Error>;
+
     /// Locking some value from underlying balance.
     ///
     /// If `key` does not identify any value or the `amount` exceeds what's
@@ -268,6 +258,9 @@ pub trait Tree {
 
     /// Return bool, defining does node exist.
     fn exists(key: Self::Key) -> bool;
+
+    /// Return bool, defining does node of type `Provision` exist.
+    fn provision_exists(key: Self::Key) -> bool;
 
     /// Removes all values.
     fn clear();

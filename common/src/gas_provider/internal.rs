@@ -60,6 +60,7 @@ pub(crate) enum NodeCreationKey<MapKey, MapReservationKey> {
     Cut(MapKey),
     SpecifiedLocal(MapKey),
     Reserved(MapReservationKey),
+    Provision(MapKey),
 }
 
 impl<MapKey, MapReservationKey> NodeCreationKey<MapKey, MapReservationKey>
@@ -69,8 +70,9 @@ where
 {
     fn to_gas_node_id(self) -> GasNodeId<MapKey, MapReservationKey> {
         match self {
-            NodeCreationKey::Cut(key) => GasNodeId::Node(key),
-            NodeCreationKey::SpecifiedLocal(key) => GasNodeId::Node(key),
+            NodeCreationKey::Cut(key)
+            | NodeCreationKey::SpecifiedLocal(key)
+            | NodeCreationKey::Provision(key) => GasNodeId::Node(key),
             NodeCreationKey::Reserved(key) => GasNodeId::Reservation(key),
         }
     }
@@ -427,6 +429,7 @@ where
         let new_node = match new_node_key {
             NodeCreationKey::Cut(_) => {
                 let id = Self::get_external(key)?;
+
                 GasNode::Cut {
                     id,
                     value: amount,
@@ -447,10 +450,23 @@ where
             }
             NodeCreationKey::Reserved(_) => {
                 let id = Self::get_external(key)?;
+
                 GasNode::Reserved {
                     id,
                     value: amount,
                     lock: Zero::zero(),
+                    refs: Default::default(),
+                    consumed: false,
+                }
+            }
+            NodeCreationKey::Provision(_) => {
+                let id = Self::get_external(key)?;
+
+                GasNode::Provision {
+                    id,
+                    value: amount,
+                    lock: Zero::zero(),
+                    system_reserve: Zero::zero(),
                     refs: Default::default(),
                     consumed: false,
                 }
@@ -537,14 +553,7 @@ where
 
     fn get_origin_node(
         key: impl Into<GasNodeIdOf<Self>>,
-    ) -> Result<
-        (
-            Self::ExternalOrigin,
-            Self::ExternalOrigin,
-            GasNodeIdOf<Self>,
-        ),
-        Self::Error,
-    > {
+    ) -> Result<(Self::ExternalOrigin, GasNodeIdOf<Self>), Self::Error> {
         let key = key.into();
         let node = Self::get_node(key).ok_or_else(InternalError::node_not_found)?;
 
@@ -553,11 +562,9 @@ where
 
         match root {
             GasNode::External { id, .. }
+            | GasNode::Provision { id, .. }
             | GasNode::Cut { id, .. }
-            | GasNode::Reserved { id, .. } => Ok((id.clone(), id, maybe_key.unwrap_or(key))),
-            GasNode::Provision {
-                id, chain_origin, ..
-            } => Ok((id, chain_origin, maybe_key.unwrap_or(key))),
+            | GasNode::Reserved { id, .. } => Ok((id, maybe_key.unwrap_or(key))),
             _ => unreachable!("Guaranteed by ValueNode::root method"),
         }
     }
@@ -768,6 +775,14 @@ where
         amount: Self::Balance,
     ) -> Result<(), Self::Error> {
         Self::create_from_with_value(key, NodeCreationKey::Cut(new_key), amount)
+    }
+
+    fn provision(
+        key: impl Into<GasNodeIdOf<Self>>,
+        new_key: Self::Key,
+        amount: Self::Balance,
+    ) -> Result<(), Self::Error> {
+        Self::create_from_with_value(key, NodeCreationKey::Provision(new_key), amount)
     }
 
     fn lock(key: impl Into<GasNodeIdOf<Self>>, amount: Self::Balance) -> Result<(), Self::Error> {
@@ -1020,6 +1035,12 @@ where
 
     fn exists(key: Self::Key) -> bool {
         Self::get_node(key).is_some()
+    }
+
+    fn provision_exists(key: Self::Key) -> bool {
+        Self::get_node(key)
+            .map(|node| node.is_provision())
+            .unwrap_or_default()
     }
 
     fn clear() {
