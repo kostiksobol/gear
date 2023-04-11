@@ -784,6 +784,22 @@ where
         })
     }
 
+    /// Fallible `gr_create_provision` syscall.
+    pub fn create_provision(ctx: &mut Runtime<E>, args: &[Value]) -> SyscallOutput {
+        sys_trace!(target: "syscalls", "create_provision, args = {}", args_to_str(args));
+
+        let (message_id_ptr, gas, err_ptr) = args.iter().read_3()?;
+
+        ctx.run_fallible::<_, _, LengthBytes>(err_ptr, RuntimeCosts::Null, |ctx| {
+            let read_message_id = ctx.register_read_decoded(message_id_ptr);
+            let message_id = ctx.read_decoded(read_message_id)?;
+
+            ctx.ext
+                .create_provision(message_id, gas)
+                .map_err(Into::into)
+        })
+    }
+
     /// Fallible `gr_unreserve_gas` syscall.
     pub fn unreserve_gas(ctx: &mut Runtime<E>, args: &[Value]) -> SyscallOutput {
         sys_trace!(target: "syscalls", "unreserve_gas, args = {}", args_to_str(args));

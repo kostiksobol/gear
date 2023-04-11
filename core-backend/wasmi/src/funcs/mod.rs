@@ -1177,6 +1177,34 @@ where
         Func::wrap(store, func)
     }
 
+    pub fn create_provision(
+        store: &mut Store<HostState<E>>,
+        forbidden: bool,
+        memory: WasmiMemory,
+    ) -> Func {
+        let func = move |caller: Caller<'_, HostState<E>>,
+                         message_id_ptr: u32,
+                         gas: u64,
+                         err_ptr: u32|
+              -> EmptyOutput {
+            syscall_trace!("create_provision", message_id_ptr, gas, err_ptr);
+            let mut ctx = CallerWrap::prepare(caller, forbidden, memory)?;
+
+            ctx.run_fallible::<_, _, LengthBytes>(err_ptr, RuntimeCosts::Null, |ctx| {
+                let read_message_id = ctx.register_read_decoded(message_id_ptr);
+                let message_id = ctx.read_decoded(read_message_id)?;
+
+                let state = ctx.host_state_mut();
+                state
+                    .ext
+                    .create_provision(message_id, gas)
+                    .map_err(Into::into)
+            })
+        };
+
+        Func::wrap(store, func)
+    }
+
     pub fn unreserve_gas(
         store: &mut Store<HostState<E>>,
         forbidden: bool,
