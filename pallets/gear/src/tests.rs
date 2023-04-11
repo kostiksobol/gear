@@ -76,6 +76,35 @@ use utils::*;
 type Gas = <<Test as Config>::GasProvider as common::GasProvider>::GasTree;
 
 #[test]
+fn provision_works() {
+    use demo_provision::{SUCCESS_MESSAGE, WASM_BINARY};
+
+    init_logger();
+
+    new_test_ext().execute_with(|| {
+        let default_program = {
+            let res = upload_program_default(USER_1, ProgramCodeKind::Default);
+            assert_ok!(res);
+            res.expect("submit result was asserted")
+        };
+
+        assert_ok!(Gear::upload_program(
+            RuntimeOrigin::signed(USER_1),
+            WASM_BINARY.to_vec(),
+            DEFAULT_SALT.to_vec(),
+            default_program.encode(),
+            BlockGasLimitOf::<Test>::get(),
+            0,
+        ));
+
+        run_to_next_block(None);
+
+        assert!(MailboxOf::<Test>::drain_key(USER_1)
+            .any(|(m, _)| m.payload() == SUCCESS_MESSAGE.as_bytes()));
+    })
+}
+
+#[test]
 fn gasfull_after_gasless() {
     init_logger();
 

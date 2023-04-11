@@ -38,6 +38,7 @@ members = [
     "examples/binaries/node",
     "examples/binaries/out-of-memory",
     "examples/binaries/program-factory",
+    "examples/binaries/provision",
     "examples/binaries/proxy",
     "examples/binaries/proxy-relay",
     "examples/binaries/proxy-with-gas",
@@ -336,6 +337,7 @@ demo-new-meta = { path = "examples/binaries/new-meta" }
 demo-node = { path = "examples/binaries/node" }
 demo-out-of-memory = { path = "examples/binaries/out-of-memory" }
 demo-program-factory = { path = "examples/binaries/program-factory" }
+demo-provision = { path = "examples/binaries/provision" }
 demo-proxy = { path = "examples/binaries/proxy", default-features = false }
 demo-proxy-relay = { path = "examples/binaries/proxy-relay" }
 demo-proxy-reservation-with-gas = { path = "examples/binaries/proxy-reservation-with-gas" }
