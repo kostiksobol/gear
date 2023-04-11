@@ -842,6 +842,7 @@ impl JournalHandler for ExtManager {
         dispatch: Dispatch,
         bn: u32,
         _reservation: Option<ReservationId>,
+        // TODO (breathx): support provision here.
         _provision: Option<u64>,
     ) {
         if bn > 0 {
