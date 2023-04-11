@@ -310,7 +310,7 @@ where
         );
         let dispatch = Dispatch::new(DispatchKind::Handle, message);
 
-        journal_handler.send_dispatch(Default::default(), dispatch, 0, None);
+        journal_handler.send_dispatch(Default::default(), dispatch, 0, None, None);
 
         nonce += 1;
     }

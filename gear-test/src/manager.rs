@@ -259,6 +259,7 @@ impl JournalHandler for InMemoryExtManager {
         dispatch: Dispatch,
         _delay: u32,
         _reservation: Option<ReservationId>,
+        _provision: Option<u64>,
     ) {
         let destination = dispatch.destination();
         if self.actors.contains_key(&destination) || self.marked_destinations.contains(&destination)

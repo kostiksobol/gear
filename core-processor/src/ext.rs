@@ -504,6 +504,20 @@ impl EnvExt for Ext {
         Ok(self.context.block_info.timestamp)
     }
 
+    fn create_provision(
+        &mut self,
+        message_sent: MessageId,
+        amount: u64,
+    ) -> Result<(), Self::Error> {
+        self.reduce_gas(amount)?;
+
+        self.context
+            .message_context
+            .create_provision(message_sent, amount)?;
+
+        Ok(())
+    }
+
     fn origin(&mut self) -> Result<gear_core::ids::ProgramId, Self::Error> {
         Ok(self.context.origin)
     }

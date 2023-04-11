@@ -111,6 +111,13 @@ impl Ext for MockExt {
     fn block_timestamp(&mut self) -> Result<u64, Self::Error> {
         Ok(0)
     }
+    fn create_provision(
+        &mut self,
+        _message_sent: MessageId,
+        _amount: u64,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
     fn origin(&mut self) -> Result<ProgramId, Self::Error> {
         Ok(ProgramId::from(0))
     }

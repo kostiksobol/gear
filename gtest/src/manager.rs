@@ -635,6 +635,7 @@ impl ExtManager {
                         reply_message.into_dispatch(program_id, dispatch.source(), message_id),
                         0,
                         None,
+                        None,
                     );
                 }
             }
@@ -673,6 +674,7 @@ impl ExtManager {
                         message_id,
                         reply_message.into_dispatch(program_id, dispatch.source(), message_id),
                         0,
+                        None,
                         None,
                     );
                 }
@@ -840,6 +842,7 @@ impl JournalHandler for ExtManager {
         dispatch: Dispatch,
         bn: u32,
         _reservation: Option<ReservationId>,
+        _provision: Option<u64>,
     ) {
         if bn > 0 {
             self.send_delayed_dispatch(dispatch, self.block_info.height.saturating_add(bn));

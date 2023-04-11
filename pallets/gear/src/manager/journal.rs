@@ -266,6 +266,7 @@ where
         dispatch: Dispatch,
         delay: u32,
         reservation: Option<ReservationId>,
+        provision: Option<u64>,
     ) {
         // This method shouldn't reduce gas allowance for enqueueing dispatch,
         // because message already charged for it within the env.
@@ -341,6 +342,17 @@ where
                         reservation_id,
                     );
                 }
+            }
+
+            if let Some(amount) = provision {
+                log::debug!("Creating provision ({amount}) for {}", dispatch.id());
+
+                GasHandlerOf::<T>::provision(
+                    dispatch.id(),
+                    MessageId::generate_reply(dispatch.id()),
+                    amount,
+                )
+                .unwrap_or_else(|e| unreachable!("GasTree corrupted! {:?}", e));
             }
 
             QueueOf::<T>::queue(dispatch)

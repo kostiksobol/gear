@@ -607,7 +607,7 @@ where
         .into_ext_info(&memory)
         .map_err(|e| format!("Backend postprocessing error: {e:?}"))?;
 
-    for (dispatch, _, _) in info.generated_dispatches {
+    for (dispatch, _, _, _) in info.generated_dispatches {
         if matches!(dispatch.kind(), DispatchKind::Reply) {
             return Ok(dispatch.payload().to_vec());
         }

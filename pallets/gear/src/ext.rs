@@ -180,6 +180,14 @@ impl EnvExt for LazyPagesExt {
         self.inner.block_timestamp()
     }
 
+    fn create_provision(
+        &mut self,
+        message_sent: MessageId,
+        amount: u64,
+    ) -> Result<(), Self::Error> {
+        self.inner.create_provision(message_sent, amount)
+    }
+
     fn origin(&mut self) -> Result<ProgramId, Self::Error> {
         self.inner.origin()
     }

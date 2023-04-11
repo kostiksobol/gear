@@ -101,12 +101,15 @@ impl ContextSettings {
     }
 }
 
+/// Non-reply dispatch (or message) with additional information.
+pub type OutgoingMessageInfo<T> = (T, u32, Option<ReservationId>, Option<u64>);
+
 /// Dispatch or message with additional information.
-pub type OutgoingMessageInfo<T> = (T, u32, Option<ReservationId>);
+pub type ReplyMessageInfo = (ReplyMessage, u32, Option<ReservationId>);
 
 /// Context outcome dispatches and awakening ids.
 pub type ContextOutcomeDrain = (
-    Vec<(Dispatch, u32, Option<ReservationId>)>,
+    Vec<(Dispatch, u32, Option<ReservationId>, Option<u64>)>,
     Vec<(MessageId, u32)>,
 );
 
@@ -117,7 +120,7 @@ pub type ContextOutcomeDrain = (
 pub struct ContextOutcome {
     init: Vec<OutgoingMessageInfo<InitMessage>>,
     handle: Vec<OutgoingMessageInfo<HandleMessage>>,
-    reply: Option<OutgoingMessageInfo<ReplyMessage>>,
+    reply: Option<ReplyMessageInfo>,
     // u32 is delay
     awakening: Vec<(MessageId, u32)>,
     // Additional information section.
@@ -141,19 +144,31 @@ impl ContextOutcome {
     pub fn drain(self) -> ContextOutcomeDrain {
         let mut dispatches = Vec::new();
 
-        for (msg, delay, reservation) in self.init.into_iter() {
-            dispatches.push((msg.into_dispatch(self.program_id), delay, reservation));
+        for (msg, delay, reservation, provision) in self.init.into_iter() {
+            dispatches.push((
+                msg.into_dispatch(self.program_id),
+                delay,
+                reservation,
+                provision,
+            ));
         }
 
-        for (msg, delay, reservation) in self.handle.into_iter() {
-            dispatches.push((msg.into_dispatch(self.program_id), delay, reservation));
+        for (msg, delay, reservation, provision) in self.handle.into_iter() {
+            dispatches.push((
+                msg.into_dispatch(self.program_id),
+                delay,
+                reservation,
+                provision,
+            ));
         }
 
+        // TODO (breathx): send reply first
         if let Some((msg, delay, reservation)) = self.reply {
             dispatches.push((
                 msg.into_dispatch(self.program_id, self.source, self.origin_msg_id),
                 delay,
                 reservation,
+                None, // provision
             ));
         };
 
@@ -261,7 +276,7 @@ impl MessageContext {
 
         self.store.outgoing.insert(last, None);
         self.store.initialized.insert(program_id);
-        self.outcome.init.push((message, delay, None));
+        self.outcome.init.push((message, delay, None, None));
 
         Ok((message_id, program_id))
     }
@@ -290,7 +305,9 @@ impl MessageContext {
                 let message_id = MessageId::generate_outgoing(self.current.id(), handle);
                 let message = HandleMessage::from_packet(message_id, packet);
 
-                self.outcome.handle.push((message, delay, reservation));
+                self.outcome
+                    .handle
+                    .push((message, delay, reservation, None));
 
                 Ok(message_id)
             } else {
@@ -441,6 +458,39 @@ impl MessageContext {
         } else {
             Err(Error::LateAccess)
         }
+    }
+
+    /// TODO (breathx): add docs
+    pub fn create_provision(&mut self, message_id: MessageId, amount: u64) -> Result<(), Error> {
+        let mut provision_ref =
+            self.outcome
+                .init
+                .iter_mut()
+                .find_map(|(message, _, _, provision)| {
+                    (message.id() == message_id).then_some(provision)
+                });
+
+        if provision_ref.is_none() {
+            provision_ref =
+                self.outcome
+                    .handle
+                    .iter_mut()
+                    .find_map(|(message, _, _, provision)| {
+                        (message.id() == message_id).then_some(provision)
+                    });
+        }
+
+        let Some(provision_ref) = provision_ref else {
+            return Err(Error::ProvisionGivenForInvalidMessageId);
+        };
+
+        if provision_ref.is_some() {
+            return Err(Error::DuplicateProvision);
+        }
+
+        *provision_ref = Some(amount);
+
+        Ok(())
     }
 
     /// Wake message by it's message id.

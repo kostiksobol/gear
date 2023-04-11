@@ -224,7 +224,7 @@ pub struct ExtInfo {
     pub system_reservation_context: SystemReservationContext,
     pub allocations: BTreeSet<WasmPage>,
     pub pages_data: BTreeMap<GearPage, PageBuf>,
-    pub generated_dispatches: Vec<(Dispatch, u32, Option<ReservationId>)>,
+    pub generated_dispatches: Vec<(Dispatch, u32, Option<ReservationId>, Option<u64>)>,
     pub awakening: Vec<(MessageId, u32)>,
     pub program_candidates_data: BTreeMap<CodeId, Vec<(MessageId, ProgramId)>>,
     pub context_store: ContextStore,

@@ -71,7 +71,7 @@ pub struct DispatchResult {
     /// Context store after execution.
     pub context_store: ContextStore,
     /// List of generated messages.
-    pub generated_dispatches: Vec<(Dispatch, u32, Option<ReservationId>)>,
+    pub generated_dispatches: Vec<(Dispatch, u32, Option<ReservationId>, Option<u64>)>,
     /// List of messages that should be woken.
     pub awakening: Vec<(MessageId, u32)>,
     /// New programs to be created with additional data (corresponding code hash and init message id).
@@ -213,6 +213,8 @@ pub enum JournalNote {
         delay: u32,
         /// Whether use supply from reservation or current message.
         reservation: Option<ReservationId>,
+        /// Provision for reply.
+        provision: Option<u64>,
     },
     /// Put this dispatch in the wait list.
     WaitDispatch {
@@ -350,6 +352,7 @@ pub trait JournalHandler {
         dispatch: Dispatch,
         delay: u32,
         reservation: Option<ReservationId>,
+        provision: Option<u64>,
     );
     /// Process send message.
     fn wait_dispatch(

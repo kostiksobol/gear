@@ -68,6 +68,10 @@ pub trait Ext {
     /// Get the current block timestamp.
     fn block_timestamp(&mut self) -> Result<u64, Self::Error>;
 
+    /// TODO (breathx): add docs
+    fn create_provision(&mut self, message_sent: MessageId, amount: u64)
+        -> Result<(), Self::Error>;
+
     /// Get the id of the user who initiated communication with blockchain,
     /// during which, currently processing message was created.
     fn origin(&mut self) -> Result<ProgramId, Self::Error>;
