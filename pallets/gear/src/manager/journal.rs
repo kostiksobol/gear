@@ -345,10 +345,10 @@ where
             }
 
             if let Some(amount) = provision {
-                log::debug!("Creating provision ({amount}) for {}", dispatch.id());
+                log::debug!("Creating provision ({amount}) for {}", message_id);
 
                 GasHandlerOf::<T>::provision(
-                    dispatch.id(),
+                    message_id,
                     MessageId::generate_reply(dispatch.id()),
                     amount,
                 )
