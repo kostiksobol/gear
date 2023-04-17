@@ -1,0 +1,26 @@
+[package]
+name = "gear-backend-wasmi"
+version = "0.1.0"
+authors = ["Gear Technologies"]
+edition = "2021"
+license = "GPL-3.0"
+
+[dependencies]
+gear-core.workspace = true
+gear-core-errors = { workspace = true, features = ["codec"] }
+gear-backend-common.workspace = true
+gsys ={ workspace = true }
+
+gear-wasm-instrument.workspace = true
+wasmi.workspace = true
+log.workspace = true
+derive_more.workspace = true
+codec.workspace = true
+blake2-rfc.workspace = true
+
+[dev-dependencies]
+gear-backend-common = { workspace = true, features = ["mock"] }
+
+[features]
+default = ["std"]
+std = ["wasmi/virtual_memory", "wasmi/std", "gear-wasm-instrument/std", "log/std"]

@@ -1,0 +1,13 @@
+[package]
+name = "gear-bags-thresholds"
+version = "1.0.0"
+authors = ["Gear Technologies"]
+edition = "2021"
+license = "GPL-3.0"
+
+[dependencies]
+vara-runtime.workspace = true
+generate-bags.workspace = true
+
+# third-party
+clap = { workspace = true, features = ["derive"] }

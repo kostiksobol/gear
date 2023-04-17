@@ -1,0 +1,36 @@
+[package]
+name = "gear-node-loader"
+version = "0.1.6"
+authors = ["Gear Technologies"]
+edition = "2021"
+
+[[bin]]
+name = "gear-node-loader"
+path = "src/main.rs"
+
+[dependencies]
+# internal dependencies
+gear-call-gen.workspace = true
+gclient.workspace = true
+gear-core.workspace = true
+gear-utils.workspace = true
+
+# external dependencies
+anyhow.workspace = true
+arbitrary.workspace = true
+dyn-clonable.workspace = true
+futures.workspace = true
+futures-timer.workspace = true
+hex.workspace = true
+names = "0.14.0"
+once_cell.workspace = true
+parking_lot.workspace = true
+primitive-types = { workspace = true, features = ["scale-info"] }
+rand = { workspace = true, features = ["small_rng"] }
+reqwest.workspace = true
+structopt = "0.3.26" # TODO: use clap instead
+thiserror.workspace = true
+tokio = { workspace = true, features = [ "macros", "rt-multi-thread" ] }
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-subscriber = { workspace = true, features = [ "env-filter", "json" ] }

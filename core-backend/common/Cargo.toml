@@ -1,0 +1,21 @@
+[package]
+name = "gear-backend-common"
+version = "0.1.0"
+authors = ["Gear Technologies"]
+edition = "2021"
+license = "GPL-3.0"
+
+[dependencies]
+gear-core.workspace = true
+gear-core-errors = { workspace = true, features = ["codec"] }
+gear-wasm-instrument.workspace = true
+
+log.workspace = true
+derive_more.workspace = true
+scale-info = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+rand.workspace = true
+
+[features]
+mock = []

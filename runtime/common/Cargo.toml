@@ -1,0 +1,53 @@
+[package]
+name = "gear-runtime-common"
+version = "0.1.0"
+authors = ["Gear Technologies"]
+edition = "2021"
+license = "GPL-3.0"
+homepage = "https://gear-tech.io"
+repository = "https://github.com/gear-tech/gear"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+# Substrate deps
+frame-support.workspace = true
+frame-system.workspace = true
+pallet-authorship.workspace = true
+pallet-balances.workspace = true
+sp-runtime.workspace = true
+sp-std.workspace = true
+
+# Used for runtime benchmarking
+frame-benchmarking = { workspace = true, optional = true }
+frame-system-benchmarking = { workspace = true, optional = true }
+
+# Internal deps
+runtime-primitives.workspace = true
+gear-common.workspace = true
+
+[features]
+default = ["std"]
+std = [
+	"frame-support/std",
+	"frame-system/std",
+	"frame-system-benchmarking?/std",
+	"pallet-authorship/std",
+	"pallet-balances/std",
+	"runtime-primitives/std",
+	"sp-runtime/std",
+	"sp-std/std",
+]
+runtime-benchmarks = [
+	"frame-benchmarking",
+	"frame-support/runtime-benchmarks",
+	"frame-system/runtime-benchmarks",
+	"frame-system-benchmarking/runtime-benchmarks",
+	"pallet-balances/runtime-benchmarks",
+	"sp-runtime/runtime-benchmarks",
+]
+try-runtime = [
+	"frame-system/try-runtime",
+	"pallet-balances/try-runtime",
+]

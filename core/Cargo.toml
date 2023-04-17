@@ -1,0 +1,26 @@
+[package]
+name = "gear-core"
+version = "0.1.0"
+authors = ["Gear Technologies"]
+edition = "2021"
+license = "GPL-3.0"
+
+[dependencies]
+gear-core-errors.workspace = true
+blake2-rfc.workspace = true
+parity-scale-codec = { workspace = true, features = [ "derive", "max-encoded-len" ] }
+scale-info = { workspace = true, features = ["derive"] }
+derive_more.workspace = true
+log.workspace = true
+gear-wasm-instrument.workspace = true
+wasmparser.workspace = true
+hex = { workspace = true, features = ["alloc"] }
+hashbrown.workspace = true
+static_assertions.workspace = true
+
+[dev-dependencies]
+wabt.workspace = true
+env_logger.workspace = true
+
+[features]
+strict = []

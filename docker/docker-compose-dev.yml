@@ -1,0 +1,16 @@
+version: '3'
+services:
+  gear:
+    build:
+      context: .
+    ports:
+      - "127.0.0.1:30333:30333/tcp"
+      - "127.0.0.1:9933:9933/tcp"
+      - "127.0.0.1:9944:9944/tcp"
+    image: ghcr.io/gear-tech/node:latest
+    volumes:
+      - "gear-data:/data"
+    command: gear --dev
+
+volumes:
+  gear-data:

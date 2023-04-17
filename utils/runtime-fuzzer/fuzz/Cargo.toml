@@ -1,0 +1,22 @@
+[package]
+name = "runtime-fuzzer-fuzz"
+version = "0.1.0"
+authors = ["Gear Technologies"]
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys.workspace = true
+runtime-fuzzer = { path = ".." }
+gear-utils.workspace = true
+env_logger.workspace = true
+log.workspace = true
+once_cell.workspace = true
+
+[[bin]]
+name = "main"
+path = "fuzz_targets/main.rs"
+test = false
+doc = false

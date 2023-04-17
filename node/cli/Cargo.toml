@@ -1,0 +1,99 @@
+[package]
+name = "gear-cli"
+version = "0.1.3"
+authors = ["Gear Technologies"]
+edition = "2021"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[lib]
+name = "gear_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gear"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true, features = ["derive"] }
+mimalloc = { workspace = true, default-features = false }
+scale-info.workspace = true
+log = { workspace = true, features = ["std"] }
+futures.workspace = true
+
+# Gear
+runtime-primitives.workspace = true
+gear-runtime-test-cli = { workspace = true, optional = true }
+service.workspace = true
+pallet-gear-payment = { workspace = true, features = ["std"] }
+pallet-gear-staking-rewards = { workspace = true, optional = true, features = ["std"] }
+
+# Gear Runtimes
+gear-runtime = { workspace = true, optional = true, features = ["std"] }
+vara-runtime = { workspace = true, optional = true, features = ["std"] }
+
+# Substrate client
+sc-cli.workspace = true
+sc-executor.workspace = true
+sc-service.workspace = true
+sc-client-api.workspace = true
+
+# Substrate primitives
+sp-core = { workspace = true, features = ["std"] }
+sp-io = { workspace = true, features = ["std"] }
+sp-inherents = { workspace = true, features = ["std"] }
+sp-keyring.workspace = true
+sp-runtime = { workspace = true, features = ["std"] }
+sp-timestamp = { workspace = true, features = ["std"] }
+
+# Substrate other (benchmarking etc)
+frame-system = { workspace = true, features = ["std"] }
+frame-benchmarking = { workspace = true, optional = true, features = ["std"] }
+frame-benchmarking-cli = { workspace = true, optional = true }
+try-runtime-cli = { workspace = true, optional = true }
+
+# Program CLI
+gcli = { workspace = true, optional = true }
+
+[build-dependencies]
+substrate-build-script-utils.workspace = true
+
+[features]
+default = ["gear-native", "vara-native", "lazy-pages"]
+gear-native = [
+	"service/gear-native",
+	"gear-runtime-test-cli?/gear-native",
+	"gear-runtime",
+]
+vara-native = [
+	"service/vara-native",
+	"gear-runtime-test-cli?/vara-native",
+	"vara-runtime",
+	"pallet-gear-staking-rewards",
+]
+lazy-pages = [
+	"service/lazy-pages",
+	"gear-runtime-test-cli?/lazy-pages",
+	"vara-runtime?/lazy-pages",
+	"gear-runtime?/lazy-pages",
+]
+runtime-benchmarks = [
+	"service/runtime-benchmarks",
+    "frame-benchmarking",
+	"frame-benchmarking-cli/runtime-benchmarks",
+]
+runtime-benchmarks-checkers = [
+	"service/runtime-benchmarks-checkers",
+]
+debug-mode = [
+	"service/debug-mode",
+	"gear-runtime?/debug-mode",
+	"vara-runtime?/debug-mode",
+]
+try-runtime = [
+	"service/try-runtime",
+	"try-runtime-cli/try-runtime",
+]
+runtime-test = ["gear-runtime-test-cli"]
+cli = [ "gcli" ]

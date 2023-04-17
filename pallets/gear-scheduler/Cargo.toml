@@ -1,0 +1,69 @@
+[package]
+name = "pallet-gear-scheduler"
+version = "1.0.0"
+authors = ['Gear Technologies']
+edition = '2021'
+license = "GPL-3.0"
+homepage = "https://gear-tech.io"
+repository = "https://github.com/gear-tech/gear"
+description = "Gear pallet to work with delayed tasks"
+readme = "README.md"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+parity-scale-codec = { workspace = true, features = ["derive"] }
+scale-info = { workspace = true, features = ["derive"] }
+primitive-types = { workspace = true, features = ["scale-info"] }
+log.workspace = true
+
+# Internal deps
+common.workspace = true
+gear-core.workspace = true
+gear-core-errors.workspace = true
+
+# Substrate deps
+frame-support.workspace = true
+frame-system.workspace = true
+frame-benchmarking = { workspace = true, optional = true }
+sp-std.workspace = true
+sp-io.workspace = true
+
+[dev-dependencies]
+core-processor.workspace = true
+pallet-gear = { workspace = true, features = ["std"] }
+pallet-gear-messenger = { workspace = true, features = ["std"] }
+pallet-gear-program = { workspace = true, features = ["std"] }
+pallet-gear-gas = { workspace = true, features = ["std"] }
+sp-core = { workspace = true, features = ["std"] }
+sp-runtime = { workspace = true, features = ["std"] }
+frame-support-test = { workspace = true, features = ["std"] }
+pallet-balances = { workspace = true, features = ["std"] }
+pallet-authorship = { workspace = true, features = ["std"] }
+pallet-timestamp = { workspace = true, features = ["std"] }
+env_logger.workspace = true
+
+[features]
+default = ['std']
+std = [
+	"parity-scale-codec/std",
+	"common/std",
+	"log/std",
+	"frame-benchmarking?/std",
+	"frame-support/std",
+	"frame-system/std",
+	"frame-benchmarking/std",
+	"scale-info/std",
+	"sp-std/std",
+	"primitive-types/std",
+	"sp-io/std",
+	"sp-runtime/std",
+]
+runtime-benchmarks = [
+	"frame-benchmarking/runtime-benchmarks",
+	"frame-system/runtime-benchmarks",
+	"frame-support/runtime-benchmarks",
+	"common/runtime-benchmarks"
+]
+try-runtime = ["frame-support/try-runtime"]

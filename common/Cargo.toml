@@ -1,0 +1,48 @@
+[package]
+name = "gear-common"
+version = "0.1.0"
+authors = ["Gear Technologies"]
+edition = "2021"
+license = "GPL-3.0"
+
+[dependencies]
+primitive-types = { workspace = true, features = ["scale-info"] }
+log.workspace = true
+derive_more.workspace = true
+
+# Internal deps
+gear-core.workspace = true
+gear-common-codegen.workspace = true
+gear-wasm-instrument = { workspace = true, optional = true }
+
+# Substrate deps
+sp-core.workspace = true
+sp-io.workspace = true
+sp-std.workspace = true
+sp-arithmetic.workspace = true
+frame-support.workspace = true
+frame-system = { workspace = true, optional = true }
+frame-benchmarking = { workspace = true, optional = true }
+
+[dev-dependencies]
+hex-literal.workspace = true
+proptest.workspace = true
+gear-utils.workspace = true
+
+[features]
+default = ["std"]
+std = [
+    "sp-core/std",
+    "sp-std/std",
+    "sp-io/std",
+    "sp-arithmetic/std",
+    "frame-support/std",
+    "primitive-types/std",
+    "gear-wasm-instrument?/std",
+]
+runtime-benchmarks = [
+    "frame-benchmarking",
+    "frame-system/runtime-benchmarks",
+    "frame-support/runtime-benchmarks",
+    "gear-wasm-instrument",
+]

@@ -1,0 +1,14 @@
+[package]
+name = "gear-core-errors"
+version = "0.1.0"
+authors = ["Gear Technologies"]
+edition = "2021"
+license = "GPL-3.0"
+
+[dependencies]
+scale-info = { workspace = true, features = ["derive"], optional = true }
+derive_more.workspace = true
+enum-iterator.workspace = true
+
+[features]
+codec = ["scale-info"]

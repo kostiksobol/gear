@@ -1,0 +1,13 @@
+[package]
+name = "galloc"
+version = "0.1.0"
+authors = ["Gear Technologies"]
+edition = "2021"
+license = "GPL-3.0"
+
+[dependencies]
+# add "checks" feature to enable hard checks in allocator
+dlmalloc = { workspace = true, features = ["global"] }
+
+[features]
+debug = ["dlmalloc/debug"]

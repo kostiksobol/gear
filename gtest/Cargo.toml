@@ -1,0 +1,25 @@
+[package]
+name = "gtest"
+version = "0.1.0"
+authors = ["Gear Technologies"]
+edition = "2021"
+license = "GPL-3.0"
+
+[dependencies]
+gear-core.workspace = true
+gear-core-errors.workspace = true
+gear-backend-common.workspace = true
+gear-backend-wasmi = { workspace = true, features = [ "std" ] }
+core-processor.workspace = true
+gear-wasm-builder.workspace = true
+
+anyhow.workspace = true
+codec = { workspace = true, features = ["derive"] }
+logger.workspace = true
+hex.workspace = true
+colored.workspace = true
+derive_more = { workspace = true, features = ["add", "add_assign", "display", "mul", "mul_assign"] }
+env_logger.workspace = true
+path-clean.workspace = true
+rand = { workspace = true, features = ["std", "std_rng"] }
+gear-wasm-instrument.workspace = true

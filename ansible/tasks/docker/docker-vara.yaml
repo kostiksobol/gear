@@ -1,0 +1,18 @@
+---
+
+- name: Copy docker-compose
+  template:
+    src: docker-compose-vara.yaml.j2
+    dest: /home/ec2-user/docker-compose.yaml
+
+- name: Stop docker-compose
+  shell: docker-compose -f "/home/ec2-user/docker-compose.yaml" down
+
+- name: Pull docker images
+  shell: docker-compose -f "/home/ec2-user/docker-compose.yaml" pull
+
+- name: Remove old docker images
+  shell: docker image prune -f
+
+- name: Run docker-compose
+  shell: docker-compose -f "/home/ec2-user/docker-compose.yaml" up -d
