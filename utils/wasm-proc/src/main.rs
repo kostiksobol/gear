@@ -183,8 +183,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut optimizer = Optimizer::new(file.clone())?;
 
         if !skip_stack_end {
-            optimizer.insert_stack_and_export();
+            optimizer.insert_stack_end_export();
         }
+
+        println!("{:?}", optimizer.insert_gear_flags_global());
 
         if strip_custom_sections {
             optimizer.strip_custom_sections();

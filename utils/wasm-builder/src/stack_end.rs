@@ -63,13 +63,14 @@ pub fn insert_stack_end_export(
             .ok_or("has no stack pointer global")?;
 
     let glob_section = module
-        .global_section()
+        .global_section_mut()
         .ok_or("Cannot find globals section")?;
     let global = glob_section
         .entries()
         .iter()
         .nth(stack_pointer_index as usize)
-        .ok_or("there is no globals")?;
+        .ok_or("there is no globals")?
+        .clone();
     if global.global_type().content_type() != ValueType::I32 {
         return Err("has no i32 global 0");
     }
@@ -83,20 +84,35 @@ pub fn insert_stack_end_export(
         return Err("second init instruction is not end");
     }
 
-    if let Instruction::I32Const(literal) = init_code[0] {
+    let stack_end_offset = if let Instruction::I32Const(literal) = init_code[0] {
         log::debug!("stack pointer init == {:#x}", literal);
+        glob_section.entries_mut().push(global);
+        let index = glob_section.entries().len() as u32 - 1;
         let export_section = module
             .export_section_mut()
             .ok_or("Cannot find export section")?;
-        let x = export_section.entries_mut();
-        x.push(ExportEntry::new(
+        export_section.entries_mut().push(ExportEntry::new(
             STACK_END_EXPORT_NAME.to_string(),
-            Internal::Global(stack_pointer_index),
+            Internal::Global(index),
         ));
-        Ok(())
+        literal
     } else {
-        Err("has unexpected instr for init")
-    }
+        return Err("has unexpected instr for init");
+    };
+
+    let x = module
+        .global_section_mut()
+        .unwrap()
+        .entries_mut()
+        .iter_mut()
+        .nth(stack_pointer_index as usize)
+        .unwrap()
+        .init_expr_mut()
+        .code_mut()
+        .get_mut(0)
+        .unwrap();
+    *x = Instruction::I32Const(stack_end_offset - 0x4000);
+    Ok(())
 }
 
 #[test]

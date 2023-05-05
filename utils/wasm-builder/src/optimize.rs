@@ -6,7 +6,10 @@ use gear_core::code::Code;
 use gear_wasm_instrument::{rules::CustomConstantCostRules, STACK_END_EXPORT_NAME};
 use pwasm_utils::{
     parity_wasm,
-    parity_wasm::elements::{Internal, Module, Section, Serialize},
+    parity_wasm::{
+        builder,
+        elements::{External, Instruction, Internal, Module, Section, Serialize},
+    },
 };
 #[cfg(not(feature = "wasm-opt"))]
 use std::process::Command;
@@ -58,13 +61,99 @@ impl Optimizer {
         })
     }
 
-    pub fn insert_stack_and_export(&mut self) {
+    pub fn insert_stack_end_export(&mut self) {
         let module_bytes = self
             .module_bytes
             .take()
             .expect("self exists so do the field 'module_bytes'");
         let _ = crate::insert_stack_end_export(&module_bytes, &mut self.module)
             .map_err(|s| log::debug!("{}", s));
+    }
+
+    pub fn insert_gear_flags_global(&mut self) -> Option<()> {
+        let import_entries = self.module.import_section_mut()?.entries_mut();
+        let mut get_gear_flags_index = None;
+        let mut set_gear_flags_index = None;
+        let mut index = 0;
+        for entry in import_entries.iter_mut() {
+            match (entry.module(), entry.field()) {
+                ("env", "get_gear_flags") => match entry.external() {
+                    External::Function(_) => {
+                        get_gear_flags_index = Some(index);
+                        index += 1;
+                    }
+                    _ => {}
+                },
+                ("env", "set_gear_flags") => match entry.external() {
+                    External::Function(_) => {
+                        set_gear_flags_index = Some(index);
+                        index += 1;
+                    }
+                    _ => {}
+                },
+                _ => match entry.external() {
+                    External::Function(_) => index += 1,
+                    _ => {}
+                },
+            }
+        }
+
+        if get_gear_flags_index.is_none() && set_gear_flags_index.is_none() {
+            return None;
+        }
+
+        log::debug!("lol {:?} {:?}", get_gear_flags_index, set_gear_flags_index);
+
+        // +_+_+
+        let offset = 0x10000 * 16 - 0x4000;
+
+        self.module = builder::from_module(self.module.clone())
+            .global()
+            .mutable()
+            .init_expr(Instruction::I64Const(offset))
+            .value_type()
+            .i64()
+            .build()
+            .build();
+
+        let gear_flags_global_index = self
+            .module
+            .global_section()
+            .unwrap()
+            .entries()
+            .len()
+            .checked_sub(1)
+            .unwrap()
+            .try_into()
+            .unwrap();
+
+        for code in self.module.code_section_mut()?.bodies_mut() {
+            for instruction in code.code_mut().elements_mut() {
+                match instruction {
+                    Instruction::Call(call_index) => {
+                        if get_gear_flags_index == Some(*call_index) {
+                            log::debug!(
+                                "Change `call {}` to `global.get {}`",
+                                call_index,
+                                gear_flags_global_index
+                            );
+                            *instruction = Instruction::GetGlobal(gear_flags_global_index);
+                        } else if set_gear_flags_index == Some(*call_index) {
+                            log::debug!(
+                                "Change `call {}` to `global.set {}`",
+                                call_index,
+                                gear_flags_global_index
+                            );
+                            *instruction = Instruction::SetGlobal(gear_flags_global_index);
+                        }
+                    }
+                    // TODO: make optimization for call_indirect also.
+                    _ => {}
+                }
+            }
+        }
+
+        Some(())
     }
 
     /// Strips all custom sections.
