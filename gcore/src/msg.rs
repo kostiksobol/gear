@@ -1131,6 +1131,12 @@ pub fn send_push(handle: MessageHandle, payload: &[u8]) -> Result<()> {
     SyscallError(len).into_result()
 }
 
+pub(crate) fn size_syscall_wrapper() -> usize {
+    let mut size = 0u32;
+    unsafe { gsys::gr_size(&mut size as *mut u32) };
+    size as usize
+}
+
 /// Get the payload size of the message that is being processed.
 ///
 /// This function returns the payload size of the current message that is being
@@ -1147,9 +1153,11 @@ pub fn send_push(handle: MessageHandle, payload: &[u8]) -> Result<()> {
 /// }
 /// ```
 pub fn size() -> usize {
-    let mut size = 0u32;
-    unsafe { gsys::gr_size(&mut size as *mut u32) };
-    size as usize
+    #[cfg(feature = "stack_buffer")]
+    return crate::stack_buffer::size();
+
+    #[cfg(not(feature = "stack_buffer"))]
+    return size_syscall_wrapper();
 }
 
 /// Get the identifier of the message source (256-bit address).

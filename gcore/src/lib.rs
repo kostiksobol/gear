@@ -63,6 +63,9 @@
 
 extern crate alloc;
 
+#[cfg(feature = "stack_buffer")]
+mod stack_buffer;
+
 pub mod errors;
 pub mod exec;
 pub mod msg;

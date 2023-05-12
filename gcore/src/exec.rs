@@ -364,6 +364,13 @@ pub fn program_id() -> ActorId {
     program_id
 }
 
+
+pub(crate) fn origin_syscall_wrapper() -> ActorId {
+    let mut origin = ActorId::default();
+    unsafe { gsys::gr_origin(origin.as_mut_ptr()) }
+    origin
+}
+
 /// Return the identifier of the original user who initiated communication with
 /// the blockchain, during which the currently processing message was created.
 ///
@@ -378,9 +385,11 @@ pub fn program_id() -> ActorId {
 /// }
 /// ```
 pub fn origin() -> ActorId {
-    let mut origin = ActorId::default();
-    unsafe { gsys::gr_origin(origin.as_mut_ptr()) }
-    origin
+    #[cfg(feature = "stack_buffer")]
+    return crate::stack_buffer::origin();
+
+    #[cfg(not(feature = "stack_buffer"))]
+    return origin_syscall_wrapper();
 }
 
 /// Pay specified rent for the program. The result contains the remainder of

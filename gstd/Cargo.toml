@@ -20,4 +20,6 @@ futures = { workspace = true, features = ["alloc"] }
 static_assertions.workspace = true
 
 [features]
+default = ["stack_buffer"]
+stack_buffer = ["gcore/stack_buffer"]
 debug = ["galloc/debug", "gcore/debug"]

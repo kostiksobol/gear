@@ -12,7 +12,7 @@ extern "C" {
     fn gr_size(size_ptr: *mut u32);
 }
 
-#[repr(align(16))]
+#[repr(transparent)]
 #[derive(Debug, Default)]
 struct StackBuffer {
     message_size: Option<u32>,
@@ -23,6 +23,10 @@ fn get_message_size() -> u32 {
     unsafe {
         let flags = get_gear_flags();
         let stack_buffer_ptr = (flags & (u32::MAX as u64)) as usize as *mut StackBuffer;
+        if stack_buffer_ptr == u32::MAX {
+            debug!("stack buffer is not set");
+            return 0;
+        }
         let stack_buffer_is_set = (flags & (1u64 << 32)) != 0;
         if !stack_buffer_is_set {
             debug!("reset stack buffer");

@@ -16,5 +16,7 @@ hex-literal.workspace = true
 galloc.workspace = true
 
 [features]
+default = ["stack_buffer"]
+stack_buffer = []
 codec = ["dep:codec", "gear-core-errors/codec"]
 debug = []
