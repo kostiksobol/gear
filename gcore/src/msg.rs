@@ -154,23 +154,19 @@ pub fn read(buffer: &mut [u8]) -> Result<()> {
     SyscallError(len).into_result()
 }
 
-// pub fn with_read(f: impl FnOnce(&mut [u8]) -> Result<()>) -> Result<()> {
-//     let size = size();
+pub fn with_read<T>(f: impl FnOnce(&mut [u8]) -> T) -> Result<T> {
+    let size = size();
+    crate::general::with_byte_buffer(size, |buffer| {
+        let mut len = 0u32;
 
-//     if size > buffer.len() {
-//         return Err(ExtError::SyscallUsage);
-//     }
+        if size > 0 {
+            unsafe { gsys::gr_read(0, size as u32, buffer.as_mut_ptr(), &mut len as *mut u32) }
+        }
 
-//     let mut len = 0u32;
-
-//     if size > 0 {
-//         unsafe { gsys::gr_read(0, size as u32, buffer.as_mut_ptr(), &mut len as *mut u32) }
-//     }
-
-//     SyscallError(len).into_result()?;
-
-//     f(&buffer[..size as usize])
-// }
+        SyscallError(len).into_result()?;
+        Ok(f(buffer))
+    })
+}
 
 /// Send a new message as a reply to the message that is currently being
 /// processed.
