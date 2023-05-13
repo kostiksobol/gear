@@ -186,7 +186,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             optimizer.insert_stack_end_export();
         }
 
-        println!("{:?}", optimizer.insert_gear_flags_global());
+        println!("{:?}", optimizer.insert_stack_buffer_global());
 
         if strip_custom_sections {
             optimizer.strip_custom_sections();

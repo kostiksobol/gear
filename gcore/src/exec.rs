@@ -30,6 +30,12 @@ use gsys::{
     LengthWithHash,
 };
 
+pub(crate) fn block_height_syscall_wrapper() -> u32 {
+    let mut bn = 0u32;
+    unsafe { gsys::gr_block_height(&mut bn as *mut u32) };
+    bn
+}
+
 /// Get the current block height.
 ///
 /// The block height serves to identify a particular block.
@@ -51,9 +57,17 @@ use gsys::{
 /// }
 /// ```
 pub fn block_height() -> u32 {
-    let mut bn = 0u32;
-    unsafe { gsys::gr_block_height(&mut bn as *mut u32) };
-    bn
+    #[cfg(feature = "stack_buffer")]
+    return crate::stack_buffer::block_height();
+
+    #[cfg(not(feature = "stack_buffer"))]
+    return block_height_syscall_wrapper();
+}
+
+pub(crate) fn block_timestamp_syscall_wrapper() -> u64 {
+    let mut timestamp = 0u64;
+    unsafe { gsys::gr_block_timestamp(&mut timestamp as *mut u64) };
+    timestamp
 }
 
 /// Get the current block timestamp.
@@ -76,9 +90,11 @@ pub fn block_height() -> u32 {
 /// }
 /// ```
 pub fn block_timestamp() -> u64 {
-    let mut timestamp = 0u64;
-    unsafe { gsys::gr_block_timestamp(&mut timestamp as *mut u64) };
-    timestamp
+    #[cfg(feature = "stack_buffer")]
+    return crate::stack_buffer::block_timestamp();
+
+    #[cfg(not(feature = "stack_buffer"))]
+    return block_timestamp_syscall_wrapper();
 }
 
 /// Terminate the execution of a program.
@@ -346,6 +362,7 @@ pub fn wake_delayed(message_id: MessageId, delay: u32) -> Result<()> {
     SyscallError(len).into_result()
 }
 
+// +_+_+ change to static variable
 /// Return the identifier of the current program.
 ///
 /// # Examples

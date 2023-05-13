@@ -70,23 +70,23 @@ impl Optimizer {
             .map_err(|s| log::debug!("{}", s));
     }
 
-    pub fn insert_gear_flags_global(&mut self) -> Option<()> {
+    pub fn insert_stack_buffer_global(&mut self) -> Option<()> {
         let import_entries = self.module.import_section_mut()?.entries_mut();
-        let mut get_gear_flags_index = None;
-        let mut set_gear_flags_index = None;
+        let mut get_stack_buffer_index = None;
+        let mut set_stack_buffer_index = None;
         let mut index = 0;
         for entry in import_entries.iter_mut() {
             match (entry.module(), entry.field()) {
-                ("env", "get_gear_flags") => match entry.external() {
+                ("env", "get_stack_buffer_global") => match entry.external() {
                     External::Function(_) => {
-                        get_gear_flags_index = Some(index);
+                        get_stack_buffer_index = Some(index);
                         index += 1;
                     }
                     _ => {}
                 },
-                ("env", "set_gear_flags") => match entry.external() {
+                ("env", "set_stack_buffer_global") => match entry.external() {
                     External::Function(_) => {
-                        set_gear_flags_index = Some(index);
+                        set_stack_buffer_index = Some(index);
                         index += 1;
                     }
                     _ => {}
@@ -98,11 +98,11 @@ impl Optimizer {
             }
         }
 
-        if get_gear_flags_index.is_none() && set_gear_flags_index.is_none() {
+        if get_stack_buffer_index.is_none() && set_stack_buffer_index.is_none() {
             return None;
         }
 
-        log::debug!("lol {:?} {:?}", get_gear_flags_index, set_gear_flags_index);
+        log::debug!("lol {:?} {:?}", get_stack_buffer_index, set_stack_buffer_index);
 
         // +_+_+
         let offset = 0x10000 * 16 - 0x4000;
@@ -131,14 +131,14 @@ impl Optimizer {
             for instruction in code.code_mut().elements_mut() {
                 match instruction {
                     Instruction::Call(call_index) => {
-                        if get_gear_flags_index == Some(*call_index) {
+                        if get_stack_buffer_index == Some(*call_index) {
                             log::debug!(
                                 "Change `call {}` to `global.get {}`",
                                 call_index,
                                 gear_flags_global_index
                             );
                             *instruction = Instruction::GetGlobal(gear_flags_global_index);
-                        } else if set_gear_flags_index == Some(*call_index) {
+                        } else if set_stack_buffer_index == Some(*call_index) {
                             log::debug!(
                                 "Change `call {}` to `global.set {}`",
                                 call_index,

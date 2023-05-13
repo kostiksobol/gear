@@ -13171,7 +13171,7 @@ dependencies = [
 [[package]]
 name = "wasmi-validation"
 version = "0.5.0"
-source = "git+https://github.com/gear-tech/wasmi?branch=v0.13.2-sign-ext#d230c9bba8e763d03b390038750cee07ee937416"
+source = "git+https://github.com/gear-tech/wasmi?branch=v0.13.2-sign-ext#3a0b1022377919e62aadf4d78b762abd1c3e9a04"
 dependencies = [
  "parity-wasm 0.45.0",
 ]

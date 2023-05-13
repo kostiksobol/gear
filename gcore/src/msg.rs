@@ -57,6 +57,15 @@ fn value_ptr(value: &u128) -> *const u128 {
     }
 }
 
+pub(crate) fn status_code_syscall_wrapper() -> Result<i32> {
+    let mut res: LengthWithCode = Default::default();
+
+    unsafe { gsys::gr_status_code(res.as_mut_ptr()) }
+    SyscallError(res.length).into_result()?;
+
+    Ok(res.code)
+}
+
 /// Get the status code of the message being processed.
 ///
 /// This function is used in the reply handler to check whether the message was
@@ -73,12 +82,17 @@ fn value_ptr(value: &u128) -> *const u128 {
 /// }
 /// ```
 pub fn status_code() -> Result<i32> {
-    let mut res: LengthWithCode = Default::default();
+    #[cfg(feature = "stack_buffer")]
+    return crate::stack_buffer::status_code();
 
-    unsafe { gsys::gr_status_code(res.as_mut_ptr()) }
-    SyscallError(res.length).into_result()?;
+    #[cfg(not(feature = "stack_buffer"))]
+    return status_code_syscall_wrapper();
+}
 
-    Ok(res.code)
+pub(crate) fn message_id_syscall_wrapper() -> MessageId {
+    let mut message_id = MessageId::default();
+    unsafe { gsys::gr_message_id(message_id.as_mut_ptr()) }
+    message_id
 }
 
 /// Get an identifier of the message that is currently being processed.
@@ -100,9 +114,11 @@ pub fn status_code() -> Result<i32> {
 /// }
 /// ```
 pub fn id() -> MessageId {
-    let mut message_id = MessageId::default();
-    unsafe { gsys::gr_message_id(message_id.as_mut_ptr()) }
-    message_id
+    #[cfg(feature = "stack_buffer")]
+    return crate::stack_buffer::message_id();
+
+    #[cfg(not(feature = "stack_buffer"))]
+    return message_id_syscall_wrapper();
 }
 
 // TODO: issue #1859
@@ -137,6 +153,24 @@ pub fn read(buffer: &mut [u8]) -> Result<()> {
 
     SyscallError(len).into_result()
 }
+
+// pub fn with_read(f: impl FnOnce(&mut [u8]) -> Result<()>) -> Result<()> {
+//     let size = size();
+
+//     if size > buffer.len() {
+//         return Err(ExtError::SyscallUsage);
+//     }
+
+//     let mut len = 0u32;
+
+//     if size > 0 {
+//         unsafe { gsys::gr_read(0, size as u32, buffer.as_mut_ptr(), &mut len as *mut u32) }
+//     }
+
+//     SyscallError(len).into_result()?;
+
+//     f(&buffer[..size as usize])
+// }
 
 /// Send a new message as a reply to the message that is currently being
 /// processed.
@@ -1160,6 +1194,12 @@ pub fn size() -> usize {
     return size_syscall_wrapper();
 }
 
+pub(crate) fn source_syscall_wrapper() -> ActorId {
+    let mut source = ActorId::default();
+    unsafe { gsys::gr_source(source.as_mut_ptr()) }
+    source
+}
+
 /// Get the identifier of the message source (256-bit address).
 ///
 /// This function is used to obtain the [`ActorId`] of the account that sends
@@ -1176,9 +1216,17 @@ pub fn size() -> usize {
 /// }
 /// ```
 pub fn source() -> ActorId {
-    let mut source = ActorId::default();
-    unsafe { gsys::gr_source(source.as_mut_ptr()) }
-    source
+    #[cfg(feature = "stack_buffer")]
+    return crate::stack_buffer::source();
+
+    #[cfg(not(feature = "stack_buffer"))]
+    return source_syscall_wrapper();
+}
+
+pub(crate) fn value_syscall_wrapper() -> u128 {
+    let mut value = 0u128;
+    unsafe { gsys::gr_value(&mut value as *mut u128) };
+    value
 }
 
 /// Get the value associated with the message that is being processed.
@@ -1197,7 +1245,9 @@ pub fn source() -> ActorId {
 /// }
 /// ```
 pub fn value() -> u128 {
-    let mut value = 0u128;
-    unsafe { gsys::gr_value(&mut value as *mut u128) };
-    value
+    #[cfg(feature = "stack_buffer")]
+    return crate::stack_buffer::value();
+
+    #[cfg(not(feature = "stack_buffer"))]
+    return value_syscall_wrapper();
 }
