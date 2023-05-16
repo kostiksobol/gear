@@ -1,4 +1,6 @@
 #![no_std]
+#![warn(missing_docs)]
+#![doc(html_logo_url = "https://docs.gear.rs/logo.svg")]
 
 extern crate alloc;
 
