@@ -147,7 +147,7 @@ impl Optimizer {
                             *instruction = Instruction::SetGlobal(gear_flags_global_index);
                         }
                     }
-                    // TODO: make optimization for call_indirect also.
+                    // TODO: make handling for call_indirect also.
                     _ => {}
                 }
             }
