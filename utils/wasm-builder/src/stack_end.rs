@@ -17,7 +17,10 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use gear_wasm_instrument::STACK_END_EXPORT_NAME;
-use pwasm_utils::parity_wasm::elements::{ExportEntry, Instruction, Internal, Module, ValueType};
+use pwasm_utils::parity_wasm::{
+    builder,
+    elements::{ExportEntry, External, Instruction, Internal, Module, ValueType},
+};
 
 fn get_global_index(module_bytes: &[u8], name_predicate: impl Fn(&str) -> bool) -> Option<u32> {
     use wasmparser::{Name, NameSectionReader, Parser, Payload::*};
@@ -57,7 +60,8 @@ fn get_global_index(module_bytes: &[u8], name_predicate: impl Fn(&str) -> bool) 
 pub fn insert_stack_end_export(
     module_bytes: &[u8],
     module: &mut Module,
-) -> Result<(), &'static str> {
+    sub_offset: u32,
+) -> Result<u32, &'static str> {
     let stack_pointer_index =
         get_global_index(module_bytes, |name| name.ends_with("__stack_pointer"))
             .ok_or("has no stack pointer global")?;
@@ -100,7 +104,12 @@ pub fn insert_stack_end_export(
         return Err("has unexpected instr for init");
     };
 
-    let x = module
+    let stack_pointer_new_offset = (stack_end_offset as u32)
+        .checked_sub(sub_offset)
+        .ok_or("sub offset is greater than stack end offset")?;
+
+    //
+    *module
         .global_section_mut()
         .unwrap()
         .entries_mut()
@@ -110,9 +119,91 @@ pub fn insert_stack_end_export(
         .init_expr_mut()
         .code_mut()
         .get_mut(0)
+        .unwrap() = Instruction::I32Const(stack_pointer_new_offset as i32);
+
+    Ok(stack_pointer_new_offset)
+}
+
+pub fn insert_stack_buffer_global(module: &mut Module, stack_buffer_offset: u32) -> Option<()> {
+    let import_entries = module.import_section_mut()?.entries_mut();
+    let mut get_stack_buffer_index = None;
+    let mut set_stack_buffer_index = None;
+    let mut index = 0;
+    for entry in import_entries.iter_mut() {
+        match (entry.module(), entry.field()) {
+            ("env", "get_stack_buffer_global") => {
+                if let External::Function(_) = entry.external() {
+                    get_stack_buffer_index = Some(index);
+                    index += 1;
+                }
+            }
+            ("env", "set_stack_buffer_global") => {
+                if let External::Function(_) = entry.external() {
+                    set_stack_buffer_index = Some(index);
+                    index += 1;
+                }
+            }
+            _ => {
+                if let External::Function(_) = entry.external() {
+                    index += 1;
+                }
+            }
+        }
+    }
+
+    if get_stack_buffer_index.is_none() && set_stack_buffer_index.is_none() {
+        return None;
+    }
+
+    *module = builder::from_module(module.clone())
+        .global()
+        .mutable()
+        .init_expr(Instruction::I64Const(stack_buffer_offset as i64))
+        .value_type()
+        .i64()
+        .build()
+        .build();
+
+    let gear_flags_global_index = module
+        .global_section()
+        .unwrap()
+        .entries()
+        .len()
+        .checked_sub(1)
+        .unwrap()
+        .try_into()
         .unwrap();
-    *x = Instruction::I32Const(stack_end_offset - 0x4000);
-    Ok(())
+
+    for code in module.code_section_mut()?.bodies_mut() {
+        for instruction in code.code_mut().elements_mut() {
+            match instruction {
+                Instruction::Call(call_index) => {
+                    if get_stack_buffer_index == Some(*call_index) {
+                        log::debug!(
+                            "Change `call {}` to `global.get {}`",
+                            call_index,
+                            gear_flags_global_index
+                        );
+                        *instruction = Instruction::GetGlobal(gear_flags_global_index);
+                    } else if set_stack_buffer_index == Some(*call_index) {
+                        log::debug!(
+                            "Change `call {}` to `global.set {}`",
+                            call_index,
+                            gear_flags_global_index
+                        );
+                        *instruction = Instruction::SetGlobal(gear_flags_global_index);
+                    }
+                }
+                Instruction::CallIndirect(_, _) => {
+                    // TODO: make handling for call_indirect also.
+                    log::trace!("lol");
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Some(())
 }
 
 #[test]
@@ -139,7 +230,7 @@ fn assembly_script_stack_pointer() {
         .to_vec();
 
     let mut module = elements::deserialize_buffer(&binary).expect("failed to deserialize binary");
-    insert_stack_end_export(&binary, &mut module).expect("insert_stack_end_export failed");
+    insert_stack_end_export(&binary, &mut module, 0).expect("insert_stack_end_export failed");
 
     let gear_stack_end = module
         .export_section()
@@ -149,8 +240,9 @@ fn assembly_script_stack_pointer() {
         .find(|e| e.field() == STACK_END_EXPORT_NAME)
         .expect("export entry should exist");
 
+    // `2` because we insert new global in wasm, which const and equal to stack pointer start offset.
     assert!(matches!(
         gear_stack_end.internal(),
-        elements::Internal::Global(1)
+        elements::Internal::Global(2)
     ));
 }

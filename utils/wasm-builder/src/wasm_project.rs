@@ -359,7 +359,7 @@ pub const WASM_EXPORTS: &[&str] = &{:?};
 
     fn generate_wasm(from: PathBuf, to_opt: Option<&Path>, to_meta: Option<&Path>) -> Result<()> {
         let mut optimizer = Optimizer::new(from)?;
-        optimizer.insert_stack_end_export();
+        optimizer.stack_optimizations(0x4000);
         optimizer.strip_custom_sections();
 
         // Generate *.opt.wasm.

@@ -237,6 +237,7 @@ impl CodeId {
     }
 }
 
+/// +_+_+
 pub fn with_byte_buffer<F, R>(size: usize, f: F) -> R
 where
     F: FnOnce(&mut [u8]) -> R,

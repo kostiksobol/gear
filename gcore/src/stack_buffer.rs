@@ -72,7 +72,7 @@ fn call_const_getter<T: Clone>(
 
 pub fn with_byte_buffer<T>(size: usize, f: impl FnOnce(&mut [u8]) -> T) -> T {
     unsafe {
-        let mut flags = get_stack_buffer_global();
+        let flags = get_stack_buffer_global();
         let stack_buffer_offset = (flags & (u32::MAX as u64)) as usize;
         if stack_buffer_offset == 0 {
             let mut buffer = vec![0; size];

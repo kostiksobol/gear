@@ -154,6 +154,7 @@ pub fn read(buffer: &mut [u8]) -> Result<()> {
     SyscallError(len).into_result()
 }
 
+/// +_+_+
 pub fn with_read<T>(f: impl FnOnce(&mut [u8]) -> T) -> Result<T> {
     let size = size();
     crate::general::with_byte_buffer(size, |buffer| {

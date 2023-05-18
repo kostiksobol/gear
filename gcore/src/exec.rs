@@ -381,7 +381,6 @@ pub fn program_id() -> ActorId {
     program_id
 }
 
-
 pub(crate) fn origin_syscall_wrapper() -> ActorId {
     let mut origin = ActorId::default();
     unsafe { gsys::gr_origin(origin.as_mut_ptr()) }

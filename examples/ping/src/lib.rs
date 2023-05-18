@@ -4,7 +4,6 @@
 extern crate galloc;
 
 use core::str;
-use galloc::prelude::vec;
 use gcore::msg;
 
 #[no_mangle]
@@ -15,7 +14,8 @@ extern "C" fn handle() {
                 let _ = msg::reply(b"PONG", 0);
             }
         }
-    }).unwrap();
+    })
+    .unwrap();
     // let mut bytes = vec![0; msg::size()];
     // msg::read(&mut bytes).unwrap();
 

@@ -1,4 +1,4 @@
-use crate::builder_error::BuilderError;
+use crate::{builder_error::BuilderError, stack_end};
 use anyhow::{Context, Result};
 #[cfg(not(feature = "wasm-opt"))]
 use colored::Colorize;
@@ -6,10 +6,7 @@ use gear_core::code::Code;
 use gear_wasm_instrument::{rules::CustomConstantCostRules, STACK_END_EXPORT_NAME};
 use pwasm_utils::{
     parity_wasm,
-    parity_wasm::{
-        builder,
-        elements::{External, Instruction, Internal, Module, Section, Serialize},
-    },
+    parity_wasm::elements::{Internal, Module, Section, Serialize},
 };
 #[cfg(not(feature = "wasm-opt"))]
 use std::process::Command;
@@ -61,99 +58,28 @@ impl Optimizer {
         })
     }
 
-    pub fn insert_stack_end_export(&mut self) {
+    pub fn stack_optimizations(&mut self, stack_buffer_size: u32) {
         let module_bytes = self
             .module_bytes
             .take()
             .expect("self exists so do the field 'module_bytes'");
-        let _ = crate::insert_stack_end_export(&module_bytes, &mut self.module)
-            .map_err(|s| log::debug!("{}", s));
-    }
 
-    pub fn insert_stack_buffer_global(&mut self) -> Option<()> {
-        let import_entries = self.module.import_section_mut()?.entries_mut();
-        let mut get_stack_buffer_index = None;
-        let mut set_stack_buffer_index = None;
-        let mut index = 0;
-        for entry in import_entries.iter_mut() {
-            match (entry.module(), entry.field()) {
-                ("env", "get_stack_buffer_global") => match entry.external() {
-                    External::Function(_) => {
-                        get_stack_buffer_index = Some(index);
-                        index += 1;
-                    }
-                    _ => {}
-                },
-                ("env", "set_stack_buffer_global") => match entry.external() {
-                    External::Function(_) => {
-                        set_stack_buffer_index = Some(index);
-                        index += 1;
-                    }
-                    _ => {}
-                },
-                _ => match entry.external() {
-                    External::Function(_) => index += 1,
-                    _ => {}
-                },
+        // let s = wasmprinter::print_bytes(&module_bytes).expect("wasmprinter failed");
+        // log::trace!(target: "gear", "================================= \n{}\n\n", s);
+
+        let stack_buffer_offset = match stack_end::insert_stack_end_export(
+            &module_bytes,
+            &mut self.module,
+            stack_buffer_size,
+        ) {
+            Ok(stack_pointer_new_offset) => stack_pointer_new_offset,
+            Err(err) => {
+                log::warn!("Cannot insert stack end global: {}", err);
+                0
             }
-        }
+        };
 
-        if get_stack_buffer_index.is_none() && set_stack_buffer_index.is_none() {
-            return None;
-        }
-
-        log::debug!("lol {:?} {:?}", get_stack_buffer_index, set_stack_buffer_index);
-
-        // +_+_+
-        let offset = 0x10000 * 16 - 0x4000;
-
-        self.module = builder::from_module(self.module.clone())
-            .global()
-            .mutable()
-            .init_expr(Instruction::I64Const(offset))
-            .value_type()
-            .i64()
-            .build()
-            .build();
-
-        let gear_flags_global_index = self
-            .module
-            .global_section()
-            .unwrap()
-            .entries()
-            .len()
-            .checked_sub(1)
-            .unwrap()
-            .try_into()
-            .unwrap();
-
-        for code in self.module.code_section_mut()?.bodies_mut() {
-            for instruction in code.code_mut().elements_mut() {
-                match instruction {
-                    Instruction::Call(call_index) => {
-                        if get_stack_buffer_index == Some(*call_index) {
-                            log::debug!(
-                                "Change `call {}` to `global.get {}`",
-                                call_index,
-                                gear_flags_global_index
-                            );
-                            *instruction = Instruction::GetGlobal(gear_flags_global_index);
-                        } else if set_stack_buffer_index == Some(*call_index) {
-                            log::debug!(
-                                "Change `call {}` to `global.set {}`",
-                                call_index,
-                                gear_flags_global_index
-                            );
-                            *instruction = Instruction::SetGlobal(gear_flags_global_index);
-                        }
-                    }
-                    // TODO: make handling for call_indirect also.
-                    _ => {}
-                }
-            }
-        }
-
-        Some(())
+        stack_end::insert_stack_buffer_global(&mut self.module, stack_buffer_offset);
     }
 
     /// Strips all custom sections.

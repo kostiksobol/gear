@@ -4059,6 +4059,7 @@ dependencies = [
  "wabt",
  "wasm-opt",
  "wasmparser-nostd 0.100.1",
+ "wasmprinter",
  "which",
 ]
 
