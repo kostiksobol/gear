@@ -23,27 +23,39 @@ use pwasm_utils::parity_wasm::{
 };
 
 fn get_global_index(module_bytes: &[u8], name_predicate: impl Fn(&str) -> bool) -> Option<u32> {
-    use wasmparser::{Name, NameSectionReader, Parser, Payload::*};
+    use wasmparser::{ExternalKind, Name, NameSectionReader, Parser, Payload::*};
 
-    let parser = Parser::new(0);
-    let mut reader = parser.parse_all(module_bytes).find_map(|p| {
-        p.ok().and_then(|section| match section {
-            CustomSection(r) if r.name() == "name" => {
-                Some(NameSectionReader::new(r.data(), r.data_offset()))
+    for section in Parser::new(0)
+        .parse_all(module_bytes)
+        .filter_map(|p| p.ok())
+    {
+        match section {
+            CustomSection(r) => {
+                if r.name() != "name" {
+                    continue;
+                }
+                let reader = NameSectionReader::new(r.data(), r.data_offset());
+                for global_names in reader.filter_map(|name| match name {
+                    Ok(Name::Global(global_names)) => Some(global_names),
+                    _ => None,
+                }) {
+                    if let Some(naming) = global_names
+                        .into_iter()
+                        .filter_map(|item| item.ok())
+                        .find(|item| name_predicate(item.name))
+                    {
+                        return Some(naming.index);
+                    }
+                }
             }
-            _ => None,
-        })
-    })?;
-
-    let global_map = reader.find_map(|name| match name {
-        Ok(Name::Global(m)) => Some(m),
-        _ => None,
-    })?;
-
-    for global in global_map {
-        match global {
-            Ok(g) if name_predicate(g.name) => return Some(g.index),
-            _ => (),
+            ExportSection(export_section) => {
+                if export_section.into_iter().filter_map(|s| s.ok()).any(|e| {
+                    e.kind == ExternalKind::Func && e.name == "__stack_pointer_global_index_is_zero"
+                }) {
+                    return Some(0);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -65,6 +77,17 @@ pub fn insert_stack_end_export(
     let stack_pointer_index =
         get_global_index(module_bytes, |name| name.ends_with("__stack_pointer"))
             .ok_or("has no stack pointer global")?;
+
+    // Remove `__stack_pointer_global_index_is_zero`.
+    if let Some(export_section) = module.export_section_mut() {
+        let exports = export_section.entries_mut();
+        if let Some(index) = exports
+            .iter()
+            .position(|e| e.field() == "__stack_pointer_global_index_is_zero")
+        {
+            exports.remove(index);
+        }
+    };
 
     let glob_section = module
         .global_section_mut()
@@ -108,7 +131,7 @@ pub fn insert_stack_end_export(
         .checked_sub(sub_offset)
         .ok_or("sub offset is greater than stack end offset")?;
 
-    //
+    // +_+_+
     *module
         .global_section_mut()
         .unwrap()
