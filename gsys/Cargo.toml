@@ -4,3 +4,8 @@ version = "0.1.0"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
+
+[features]
+default = ["stack_buffer", "stack_global_index_zero"]
+stack_buffer = []
+stack_global_index_zero = []

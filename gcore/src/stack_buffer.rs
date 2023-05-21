@@ -1,31 +1,9 @@
-use crate::{errors::Result, ActorId, MessageId};
+use crate::{ActorId, MessageId};
 use alloc::vec;
-
-extern "C" {
-    fn get_stack_buffer_global() -> u64;
-    fn set_stack_buffer_global(i: u64);
-}
-
-const BYTE_BUFFER1_SIZE: usize = 0x400;
-const BYTE_BUFFER2_SIZE: usize = 0x800;
-const BYTE_BUFFER3_SIZE: usize = 0x1000;
-const BYTE_BUFFER4_SIZE: usize = 0x2000;
-
-#[derive(Debug)]
-struct StackBuffer {
-    block_height: u32,
-    block_timestamp: u64,
-    message_id: MessageId,
-    origin: ActorId,
-    message_size: usize,
-    status_code: Result<i32>,
-    source: ActorId,
-    value: u128,
-    byte_buffer1: [u8; BYTE_BUFFER1_SIZE],
-    byte_buffer2: [u8; BYTE_BUFFER2_SIZE],
-    byte_buffer3: [u8; BYTE_BUFFER3_SIZE],
-    byte_buffer4: [u8; BYTE_BUFFER4_SIZE],
-}
+use gsys::stack_buffer::{
+    get_stack_buffer_global, set_stack_buffer_global, StackBuffer, BYTE_BUFFER1_SIZE,
+    BYTE_BUFFER2_SIZE, BYTE_BUFFER3_SIZE, BYTE_BUFFER4_SIZE,
+};
 
 enum HostGetterIndex {
     BlockHeight = 32,
@@ -42,10 +20,10 @@ enum HostGetterIndex {
     ByteBuffer4,
 }
 
-fn call_const_getter<T: Clone>(
+fn call_const_getter<T: Clone + From<K>, K: Clone + From<T>>(
     index: HostGetterIndex,
     get: impl FnOnce() -> T,
-    stack_buffer_field: impl FnOnce(&mut StackBuffer) -> &mut T,
+    stack_buffer_field: impl FnOnce(&mut StackBuffer) -> &mut K,
 ) -> T {
     unsafe {
         let mut flags = get_stack_buffer_global();
@@ -59,10 +37,10 @@ fn call_const_getter<T: Clone>(
         let mask = 1u64 << index as u64;
 
         if flags & mask != 0 {
-            stack_buffer_field(stack_buffer).clone()
+            stack_buffer_field(stack_buffer).clone().into()
         } else {
             let data = get();
-            *stack_buffer_field(stack_buffer) = data.clone();
+            *stack_buffer_field(stack_buffer) = data.clone().into();
             flags |= mask;
             set_stack_buffer_global(flags);
             data
@@ -166,7 +144,7 @@ pub fn block_timestamp() -> u64 {
     )
 }
 
-pub fn status_code() -> Result<i32> {
+pub fn status_code() -> gsys::LengthWithCode {
     call_const_getter(
         HostGetterIndex::StatusCode,
         crate::msg::status_code_syscall_wrapper,

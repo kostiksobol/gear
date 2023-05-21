@@ -58,11 +58,13 @@ impl Optimizer {
         })
     }
 
-    pub fn stack_optimizations(&mut self, stack_buffer_size: u32) {
+    pub fn stack_optimizations(&mut self) {
         let module_bytes = self
             .module_bytes
             .take()
             .expect("self exists so do the field 'module_bytes'");
+
+        let stack_buffer_size = gsys::stack_buffer::STACK_BUFFER_SIZE;
 
         // let s = wasmprinter::print_bytes(&module_bytes).expect("wasmprinter failed");
         // log::trace!(target: "gear", "================================= \n{}\n\n", s);

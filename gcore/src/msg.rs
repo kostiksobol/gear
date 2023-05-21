@@ -57,13 +57,10 @@ fn value_ptr(value: &u128) -> *const u128 {
     }
 }
 
-pub(crate) fn status_code_syscall_wrapper() -> Result<i32> {
+pub(crate) fn status_code_syscall_wrapper() -> LengthWithCode {
     let mut res: LengthWithCode = Default::default();
-
     unsafe { gsys::gr_status_code(res.as_mut_ptr()) }
-    SyscallError(res.length).into_result()?;
-
-    Ok(res.code)
+    res
 }
 
 /// Get the status code of the message being processed.
@@ -83,10 +80,14 @@ pub(crate) fn status_code_syscall_wrapper() -> Result<i32> {
 /// ```
 pub fn status_code() -> Result<i32> {
     #[cfg(feature = "stack_buffer")]
-    return crate::stack_buffer::status_code();
+    let length_with_code = crate::stack_buffer::status_code();
 
     #[cfg(not(feature = "stack_buffer"))]
-    return status_code_syscall_wrapper();
+    let length_with_code = status_code_syscall_wrapper();
+
+    SyscallError(length_with_code.length).into_result()?;
+
+    Ok(length_with_code.code)
 }
 
 pub(crate) fn message_id_syscall_wrapper() -> MessageId {

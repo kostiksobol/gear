@@ -10,6 +10,7 @@ gsys.workspace = true
 gear-core-errors.workspace = true
 codec = { workspace = true, optional = true }
 static_assertions.workspace = true
+gear-wasm-instrument.workspace = true
 
 [dev-dependencies]
 hex-literal.workspace = true

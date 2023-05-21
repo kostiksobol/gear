@@ -21,6 +21,8 @@
 //! This module contains definitions of common structures that are used to work
 //! with Gear API.
 
+use gsys::Hash;
+
 /// Message handle.
 ///
 /// Gear allows users and programs to interact with other users and programs via
@@ -77,6 +79,18 @@ pub struct MessageHandle(pub(crate) u32);
 /// ```
 #[derive(Clone, Copy, Debug, Default, Hash, Ord, PartialEq, PartialOrd, Eq)]
 pub struct MessageId(pub [u8; 32]);
+
+impl From<Hash> for MessageId {
+    fn from(value: Hash) -> Self {
+        MessageId(value)
+    }
+}
+
+impl From<MessageId> for Hash {
+    fn from(value: MessageId) -> Self {
+        value.0
+    }
+}
 
 impl MessageId {
     /// Create an empty `MessageId`.
@@ -142,6 +156,18 @@ impl From<u64> for ActorId {
         let mut id = ActorId::zero();
         id.0[0..8].copy_from_slice(&value.to_le_bytes());
         id
+    }
+}
+
+impl From<Hash> for ActorId {
+    fn from(value: Hash) -> Self {
+        ActorId(value)
+    }
+}
+
+impl From<ActorId> for Hash {
+    fn from(value: ActorId) -> Self {
+        value.0
     }
 }
 

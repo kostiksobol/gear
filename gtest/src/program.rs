@@ -273,7 +273,7 @@ impl<'a> Program<'a> {
 
         let opt_code = if !is_opt {
             let mut optimizer = Optimizer::new(path).expect("Failed to create optimizer");
-            optimizer.stack_optimizations(0x4000);
+            optimizer.stack_optimizations();
             optimizer.strip_custom_sections();
             optimizer
                 .optimize(OptType::Opt)
