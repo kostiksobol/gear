@@ -23,6 +23,9 @@
 
 use gsys::Hash;
 
+#[cfg(not(feature = "stack_buffer"))]
+use alloc::vec;
+
 /// Message handle.
 ///
 /// Gear allows users and programs to interact with other users and programs via

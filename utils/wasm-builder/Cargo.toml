@@ -27,7 +27,7 @@ wasmparser.workspace = true
 regex.workspace = true
 filetime = "0.2"
 wasmprinter = "0.2"
-gsys.workspace = true
+gsys = { workspace=true, features = ["stack_buffer", "stack_pointer_global_index_is_zero"] }
 
 [dev-dependencies]
 wabt.workspace = true

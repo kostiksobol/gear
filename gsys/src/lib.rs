@@ -25,6 +25,13 @@ use core::mem;
 #[cfg(feature = "stack_buffer")]
 pub mod stack_buffer;
 
+#[cfg(feature = "stack_pointer_global_index_is_zero")]
+pub const STACK_POINTER_GLOBAL_LABEL_NAME: &str = "__stack_pointer_global_index_is_zero";
+
+#[cfg(feature = "stack_pointer_global_index_is_zero")]
+#[no_mangle]
+extern "C" fn __stack_pointer_global_index_is_zero() {}
+
 /// Represents block number type.
 pub type BlockNumber = u32;
 

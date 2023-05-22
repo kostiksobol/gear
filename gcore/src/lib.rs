@@ -63,9 +63,6 @@
 
 extern crate alloc;
 
-#[no_mangle]
-extern "C" fn __stack_pointer_global_index_is_zero() {}
-
 #[cfg(feature = "stack_buffer")]
 mod stack_buffer;
 

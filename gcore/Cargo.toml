@@ -17,7 +17,8 @@ hex-literal.workspace = true
 galloc.workspace = true
 
 [features]
-default = ["stack_buffer"]
-stack_buffer = []
+optimized = ["stack_buffer", "stack_pointer_global_index_is_zero"]
+stack_buffer = ["gsys/stack_buffer"]
+stack_pointer_global_index_is_zero = ["gsys/stack_pointer_global_index_is_zero"]
 codec = ["dep:codec", "gear-core-errors/codec"]
 debug = []

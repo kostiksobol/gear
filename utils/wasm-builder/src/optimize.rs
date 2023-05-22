@@ -83,20 +83,26 @@ impl Optimizer {
             &mut self.module,
             stack_buffer_size,
         ) {
-            Ok(stack_pointer_new_offset) => stack_pointer_new_offset,
+            Ok(stack_pointer_new_offset) => Some(stack_pointer_new_offset),
             Err(err) => {
                 log::warn!("Cannot insert stack end global: {}", err);
-                0
+                None
             }
         };
 
         if stack_buffer_get_index.is_some() || stack_buffer_set_index.is_some() {
+            let stack_buffer_offset = stack_buffer_offset.expect(
+                "Panic because we cannot insert stack end global,
+            but also must make stack buffer, which is not possible",
+            );
+
             stack_end::insert_stack_buffer_global(
                 &mut self.module,
                 stack_buffer_offset,
                 stack_buffer_get_index,
                 stack_buffer_set_index,
-            );
+            )
+            .expect("By some reasons we cannot process stack buffer global");
         }
     }
 

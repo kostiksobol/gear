@@ -17,49 +17,46 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use gear_wasm_instrument::STACK_END_EXPORT_NAME;
+use gsys::stack_buffer::{GET_STACK_BUFFER_GLOBAL_NAME, SET_STACK_BUFFER_GLOBAL_NAME};
 use pwasm_utils::parity_wasm::{
     builder,
     elements::{ExportEntry, External, Instruction, Internal, Module, ValueType},
 };
 
-fn get_global_index(module_bytes: &[u8], name_predicate: impl Fn(&str) -> bool) -> Option<u32> {
-    use wasmparser::{ExternalKind, Name, NameSectionReader, Parser, Payload::*};
+const STACK_POINTER_GLOBAL_SUFFIX: &str = "__stack_pointer";
 
-    for section in Parser::new(0)
+fn get_global_index(module_bytes: &[u8], name_predicate: impl Fn(&str) -> bool) -> Option<u32> {
+    use wasmparser::{Name, NameSectionReader, Parser, Payload::*};
+
+    // Search for `names` section in custom sections.
+    let names_section = Parser::new(0)
         .parse_all(module_bytes)
         .filter_map(|p| p.ok())
-    {
-        match section {
-            CustomSection(r) => {
-                if r.name() != "name" {
-                    continue;
+        .find_map(|section| {
+            if let CustomSection(custom_section) = section {
+                if custom_section.name() == "name" {
+                    Some(custom_section)
+                } else {
+                    None
                 }
-                let reader = NameSectionReader::new(r.data(), r.data_offset());
-                for global_names in reader.filter_map(|name| match name {
-                    Ok(Name::Global(global_names)) => Some(global_names),
-                    _ => None,
-                }) {
-                    if let Some(naming) = global_names
-                        .into_iter()
-                        .filter_map(|item| item.ok())
-                        .find(|item| name_predicate(item.name))
-                    {
-                        return Some(naming.index);
-                    }
-                }
+            } else {
+                None
             }
-            ExportSection(export_section) => {
-                if export_section.into_iter().filter_map(|s| s.ok()).any(|e| {
-                    e.kind == ExternalKind::Func && e.name == "__stack_pointer_global_index_is_zero"
-                }) {
-                    return Some(0);
-                }
-            }
-            _ => {}
-        }
-    }
+        })?;
 
-    None
+    // In all global names sub-sections search for global, which suits `name_predicate`.
+    NameSectionReader::new(names_section.data(), names_section.data_offset())
+        .filter_map(|name| match name {
+            Ok(Name::Global(global_names)) => Some(global_names),
+            _ => None,
+        })
+        .find_map(|global_names| {
+            global_names
+                .into_iter()
+                .filter_map(|item| item.ok())
+                .find(|naming| name_predicate(naming.name))
+        })
+        .map(|naming| naming.index)
 }
 
 /// Insert the export with the stack end address in `module` if there is
@@ -74,20 +71,27 @@ pub fn insert_stack_end_export(
     module: &mut Module,
     sub_offset: u32,
 ) -> Result<u32, &'static str> {
-    let stack_pointer_index =
-        get_global_index(module_bytes, |name| name.ends_with("__stack_pointer"))
-            .ok_or("has no stack pointer global")?;
+    let mut stack_pointer_index = get_global_index(module_bytes, |name| {
+        name.ends_with(STACK_POINTER_GLOBAL_SUFFIX)
+    });
 
-    // Remove `__stack_pointer_global_index_is_zero`.
     if let Some(export_section) = module.export_section_mut() {
         let exports = export_section.entries_mut();
         if let Some(index) = exports
             .iter()
-            .position(|e| e.field() == "__stack_pointer_global_index_is_zero")
+            .position(|e| e.field() == gsys::STACK_POINTER_GLOBAL_LABEL_NAME)
         {
+            if stack_pointer_index.is_none() {
+                // In case we do not find stack_pointer global in names section,
+                // then we suppose that index is 0, due to this special export exists.
+                stack_pointer_index = Some(0);
+            }
+            // Remove stack pointer global label if there is one.
             exports.remove(index);
         }
     };
+
+    let stack_pointer_index = stack_pointer_index.ok_or("Cannot find stack pointer global")?;
 
     let glob_section = module
         .global_section_mut()
@@ -160,13 +164,13 @@ pub fn get_stack_buffer_export_indexes(module: &Module) -> (Option<u32>, Option<
     for entry in import_entries.iter() {
         log::debug!("entry: {:?}", entry);
         match (entry.module(), entry.field()) {
-            ("env", gsys::stack_buffer::GET_STACK_BUFFER_GLOBAL_NAME) => {
+            ("env", GET_STACK_BUFFER_GLOBAL_NAME) => {
                 if let External::Function(_) = entry.external() {
                     get_stack_buffer_index = Some(index);
                     index += 1;
                 }
             }
-            ("env", gsys::stack_buffer::SET_STACK_BUFFER_GLOBAL_NAME) => {
+            ("env", SET_STACK_BUFFER_GLOBAL_NAME) => {
                 if let External::Function(_) = entry.external() {
                     set_stack_buffer_index = Some(index);
                     index += 1;
@@ -194,7 +198,7 @@ pub fn insert_stack_buffer_global(
     stack_buffer_offset: u32,
     get_index: Option<u32>,
     set_index: Option<u32>,
-) -> Option<()> {
+) -> Result<(), &'static str> {
     *module = builder::from_module(module.clone())
         .global()
         .mutable()
@@ -206,15 +210,19 @@ pub fn insert_stack_buffer_global(
 
     let gear_flags_global_index = module
         .global_section()
-        .unwrap()
+        .ok_or("Cannot find global section, which must be.")?
         .entries()
         .len()
         .checked_sub(1)
-        .unwrap()
+        .ok_or("Globals section is empty, but must be at least one element.")?
         .try_into()
-        .unwrap();
+        .map_err(|_| "Globals index is too big")?;
 
-    for code in module.code_section_mut()?.bodies_mut() {
+    for code in module
+        .code_section_mut()
+        .ok_or("Cannot find code section")?
+        .bodies_mut()
+    {
         for instruction in code.code_mut().elements_mut() {
             match instruction {
                 Instruction::Call(call_index) => {
@@ -243,7 +251,7 @@ pub fn insert_stack_buffer_global(
         }
     }
 
-    Some(())
+    Ok(())
 }
 
 #[test]
