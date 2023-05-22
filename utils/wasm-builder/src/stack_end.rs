@@ -147,20 +147,26 @@ pub fn insert_stack_end_export(
     Ok(stack_pointer_new_offset)
 }
 
-pub fn insert_stack_buffer_global(module: &mut Module, stack_buffer_offset: u32) -> Option<()> {
-    let import_entries = module.import_section_mut()?.entries_mut();
+pub fn get_stack_buffer_export_indexes(module: &Module) -> (Option<u32>, Option<u32>) {
+    let import_entries = if let Some(import_section) = module.import_section() {
+        import_section.entries()
+    } else {
+        return (None, None);
+    };
+
     let mut get_stack_buffer_index = None;
     let mut set_stack_buffer_index = None;
     let mut index = 0;
-    for entry in import_entries.iter_mut() {
+    for entry in import_entries.iter() {
+        log::debug!("entry: {:?}", entry);
         match (entry.module(), entry.field()) {
-            ("env", "get_stack_buffer_global") => {
+            ("env", gsys::stack_buffer::GET_STACK_BUFFER_GLOBAL_NAME) => {
                 if let External::Function(_) = entry.external() {
                     get_stack_buffer_index = Some(index);
                     index += 1;
                 }
             }
-            ("env", "set_stack_buffer_global") => {
+            ("env", gsys::stack_buffer::SET_STACK_BUFFER_GLOBAL_NAME) => {
                 if let External::Function(_) = entry.external() {
                     set_stack_buffer_index = Some(index);
                     index += 1;
@@ -174,10 +180,21 @@ pub fn insert_stack_buffer_global(module: &mut Module, stack_buffer_offset: u32)
         }
     }
 
-    if get_stack_buffer_index.is_none() && set_stack_buffer_index.is_none() {
-        return None;
-    }
+    log::debug!(
+        "get_stack_buffer_index: {:?}, set_stack_buffer_index: {:?}",
+        get_stack_buffer_index,
+        set_stack_buffer_index
+    );
 
+    (get_stack_buffer_index, set_stack_buffer_index)
+}
+
+pub fn insert_stack_buffer_global(
+    module: &mut Module,
+    stack_buffer_offset: u32,
+    get_index: Option<u32>,
+    set_index: Option<u32>,
+) -> Option<()> {
     *module = builder::from_module(module.clone())
         .global()
         .mutable()
@@ -201,14 +218,14 @@ pub fn insert_stack_buffer_global(module: &mut Module, stack_buffer_offset: u32)
         for instruction in code.code_mut().elements_mut() {
             match instruction {
                 Instruction::Call(call_index) => {
-                    if get_stack_buffer_index == Some(*call_index) {
+                    if get_index == Some(*call_index) {
                         log::debug!(
                             "Change `call {}` to `global.get {}`",
                             call_index,
                             gear_flags_global_index
                         );
                         *instruction = Instruction::GetGlobal(gear_flags_global_index);
-                    } else if set_stack_buffer_index == Some(*call_index) {
+                    } else if set_index == Some(*call_index) {
                         log::debug!(
                             "Change `call {}` to `global.set {}`",
                             call_index,
@@ -219,7 +236,7 @@ pub fn insert_stack_buffer_global(module: &mut Module, stack_buffer_offset: u32)
                 }
                 Instruction::CallIndirect(_, _) => {
                     // TODO: make handling for call_indirect also.
-                    log::trace!("lol");
+                    // log::trace!("lol");
                 }
                 _ => {}
             }

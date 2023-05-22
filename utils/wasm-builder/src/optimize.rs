@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use gear_core::code::Code;
 use gear_wasm_instrument::{rules::CustomConstantCostRules, STACK_END_EXPORT_NAME};
+use gsys::stack_buffer::STACK_BUFFER_SIZE;
 use pwasm_utils::{
     parity_wasm,
     parity_wasm::elements::{Internal, Module, Section, Serialize},
@@ -64,7 +65,15 @@ impl Optimizer {
             .take()
             .expect("self exists so do the field 'module_bytes'");
 
-        let stack_buffer_size = gsys::stack_buffer::STACK_BUFFER_SIZE;
+        let (stack_buffer_get_index, stack_buffer_set_index) =
+            stack_end::get_stack_buffer_export_indexes(&self.module);
+
+        let stack_buffer_size =
+            if stack_buffer_get_index.is_some() || stack_buffer_set_index.is_some() {
+                STACK_BUFFER_SIZE
+            } else {
+                0
+            };
 
         // let s = wasmprinter::print_bytes(&module_bytes).expect("wasmprinter failed");
         // log::trace!(target: "gear", "================================= \n{}\n\n", s);
@@ -81,7 +90,14 @@ impl Optimizer {
             }
         };
 
-        stack_end::insert_stack_buffer_global(&mut self.module, stack_buffer_offset);
+        if stack_buffer_get_index.is_some() || stack_buffer_set_index.is_some() {
+            stack_end::insert_stack_buffer_global(
+                &mut self.module,
+                stack_buffer_offset,
+                stack_buffer_get_index,
+                stack_buffer_set_index,
+            );
+        }
     }
 
     /// Strips all custom sections.
