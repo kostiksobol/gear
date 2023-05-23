@@ -1,9 +1,6 @@
 use crate::{ActorId, MessageId};
 use alloc::vec;
-use gsys::stack_buffer::{
-    get_stack_buffer_global, set_stack_buffer_global, StackBuffer, BYTE_BUFFER1_SIZE,
-    BYTE_BUFFER2_SIZE, BYTE_BUFFER3_SIZE, BYTE_BUFFER4_SIZE,
-};
+use gsys::stack_buffer::{get_stack_buffer_global, set_stack_buffer_global, StackBuffer};
 
 enum HostGetterIndex {
     BlockHeight = 32,
@@ -14,10 +11,6 @@ enum HostGetterIndex {
     StatusCode,
     Source,
     Value,
-    ByteBuffer1,
-    ByteBuffer2,
-    ByteBuffer3,
-    ByteBuffer4,
 }
 
 fn call_const_getter<T: Clone + From<K>, K: Clone + From<T>>(
@@ -48,59 +41,31 @@ fn call_const_getter<T: Clone + From<K>, K: Clone + From<T>>(
     }
 }
 
+#[inline(never)]
+fn with_const_byte_buffer<T, const N: usize>(size: usize, f: impl FnOnce(&mut [u8]) -> T) -> T {
+    let mut buffer = [0u8; N];
+    let sub_buffer = &mut buffer[0..size];
+    f(sub_buffer)
+}
+
 pub fn with_byte_buffer<T>(size: usize, f: impl FnOnce(&mut [u8]) -> T) -> T {
-    unsafe {
-        let flags = get_stack_buffer_global();
-        let stack_buffer_offset = (flags & (u32::MAX as u64)) as usize;
-        if stack_buffer_offset == 0 {
-            let mut buffer = vec![0; size];
-            return f(buffer.as_mut_slice());
-        }
-
-        let stack_buffer = (stack_buffer_offset as *mut StackBuffer).as_mut().unwrap();
-
-        let buffer_index = match size {
-            size if size <= BYTE_BUFFER1_SIZE => HostGetterIndex::ByteBuffer1,
-            size if size <= BYTE_BUFFER2_SIZE => HostGetterIndex::ByteBuffer2,
-            size if size <= BYTE_BUFFER3_SIZE => HostGetterIndex::ByteBuffer3,
-            size if size <= BYTE_BUFFER4_SIZE => HostGetterIndex::ByteBuffer4,
-            _ => {
-                let mut buffer = vec![0; size];
-                return f(buffer.as_mut_slice());
-            }
-        };
-
-        for index in buffer_index as u32..=HostGetterIndex::ByteBuffer4 as u32 {
-            let mask = 1u64 << index as u64;
-            if flags & mask != 0 {
-                continue;
-            }
-
-            let s1 = HostGetterIndex::ByteBuffer1 as u32;
-            let s2 = HostGetterIndex::ByteBuffer2 as u32;
-            let s3 = HostGetterIndex::ByteBuffer3 as u32;
-            let s4 = HostGetterIndex::ByteBuffer4 as u32;
-
-            let buffer = match index {
-                s if s == s1 => stack_buffer.byte_buffer1.as_mut_slice(),
-                s if s == s2 => stack_buffer.byte_buffer2.as_mut_slice(),
-                s if s == s3 => stack_buffer.byte_buffer3.as_mut_slice(),
-                s if s == s4 => stack_buffer.byte_buffer4.as_mut_slice(),
-                _ => unreachable!(),
-            };
-
-            set_stack_buffer_global(flags | mask);
-
-            let data = f(buffer[0..size].as_mut());
-
-            let flags = get_stack_buffer_global();
-            set_stack_buffer_global(flags & !mask);
-
-            return data;
-        }
-
-        let mut buffer = vec![0; size];
-        return f(buffer.as_mut_slice());
+    match size {
+        size if size <= 0x1 => with_const_byte_buffer::<_, 0x1>(size, f),
+        size if size <= 0x2 => with_const_byte_buffer::<_, 0x2>(size, f),
+        size if size <= 0x4 => with_const_byte_buffer::<_, 0x4>(size, f),
+        size if size <= 0x8 => with_const_byte_buffer::<_, 0x8>(size, f),
+        size if size <= 0x10 => with_const_byte_buffer::<_, 0x10>(size, f),
+        size if size <= 0x20 => with_const_byte_buffer::<_, 0x20>(size, f),
+        size if size <= 0x40 => with_const_byte_buffer::<_, 0x40>(size, f),
+        size if size <= 0x80 => with_const_byte_buffer::<_, 0x80>(size, f),
+        size if size <= 0x100 => with_const_byte_buffer::<_, 0x100>(size, f),
+        size if size <= 0x200 => with_const_byte_buffer::<_, 0x200>(size, f),
+        size if size <= 0x400 => with_const_byte_buffer::<_, 0x400>(size, f),
+        size if size <= 0x800 => with_const_byte_buffer::<_, 0x800>(size, f),
+        size if size <= 0x1000 => with_const_byte_buffer::<_, 0x1000>(size, f),
+        size if size <= 0x2000 => with_const_byte_buffer::<_, 0x2000>(size, f),
+        size if size <= 0x4000 => with_const_byte_buffer::<_, 0x4000>(size, f),
+        _ => f(vec![0; size].as_mut_slice()),
     }
 }
 
