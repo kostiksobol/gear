@@ -27,8 +27,9 @@ use crate::{
     prelude::{convert::AsRef, ops::RangeBounds},
     ActorId, MessageId, ReservationId,
 };
+use alloc::vec::Vec;
 use gstd_codegen::wait_for_reply;
-use scale_info::scale::{Decode, Encode};
+use scale_info::scale::{Decode, Encode, MaxEncodedLen};
 
 /// Get a payload of the message that is currently being processed.
 ///
@@ -60,6 +61,26 @@ use scale_info::scale::{Decode, Encode};
 ///   vector.
 pub fn load<D: Decode>() -> Result<D> {
     D::decode(&mut super::load_bytes()?.as_ref()).map_err(ContractError::Decode)
+}
+
+/// +_+_+
+pub fn with_loaded<D: Decode, R>(mut f: impl FnMut(D) -> R) -> Result<R> {
+    #[cfg(feature = "stack_buffer")]
+    {
+        use gcore::msg::with_read;
+        let wrapper = |buffer: &mut [u8]| -> Result<R> {
+            let mut buffer: &[u8] = buffer;
+            let data = D::decode(&mut buffer).map_err(ContractError::Decode)?;
+            Ok(f(data))
+        };
+        with_read(wrapper)?
+    }
+
+    #[cfg(not(feature = "stack_buffer"))]
+    {
+        let data = load()?;
+        Ok(f(data))
+    }
 }
 
 /// Send a new message as a reply to the message being

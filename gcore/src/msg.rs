@@ -158,7 +158,7 @@ pub fn read(buffer: &mut [u8]) -> Result<()> {
 /// +_+_+
 pub fn with_read<T>(f: impl FnOnce(&mut [u8]) -> T) -> Result<T> {
     let size = size();
-    crate::general::with_byte_buffer(size, |buffer| {
+    crate::with_byte_buffer(size, |buffer| {
         let mut len = 0u32;
 
         if size > 0 {
