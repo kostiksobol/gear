@@ -64,23 +64,36 @@ pub fn load<D: Decode>() -> Result<D> {
 }
 
 /// +_+_+
-pub fn with_loaded<D: Decode, R>(mut f: impl FnMut(D) -> R) -> Result<R> {
+pub fn with_loaded<D: Decode, R>(mut f: impl FnMut(Result<D>) -> R) -> R {
     #[cfg(feature = "stack_buffer")]
     {
-        use gcore::msg::with_read;
-        let wrapper = |buffer: &mut [u8]| -> Result<R> {
-            let mut buffer: &[u8] = buffer;
-            let data = D::decode(&mut buffer).map_err(ContractError::Decode)?;
-            Ok(f(data))
+        let wrapper = |read_result: Result<&mut [u8]>| -> R {
+            let arg = match read_result.map(|buffer| {
+                let mut buffer: &[u8] = buffer;
+                D::decode(&mut buffer).map_err(ContractError::Decode)
+            }) {
+                Err(err) => Err(err),
+                Ok(Err(err)) => Err(err),
+                Ok(Ok(res)) => Ok(res),
+            };
+            f(arg)
         };
-        with_read(wrapper)?
+        super::basic::with_read_bytes(wrapper)
     }
 
     #[cfg(not(feature = "stack_buffer"))]
     {
-        let data = load()?;
-        Ok(f(data))
+        Ok(f(load()))
     }
+}
+
+/// +_+_+
+pub fn with_loaded_optimized<D: Decode, R>(f: impl FnMut(Result<D>) -> R) -> R {
+    #[cfg(feature = "stack_buffer")]
+    return gcore::with_stack_buffer(|| with_loaded(f));
+
+    #[cfg(not(feature = "stack_buffer"))]
+    return with_loaded(f);
 }
 
 /// Send a new message as a reply to the message being

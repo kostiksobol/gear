@@ -156,7 +156,7 @@ pub fn read(buffer: &mut [u8]) -> Result<()> {
 }
 
 /// +_+_+
-pub fn with_read<T>(f: impl FnOnce(&mut [u8]) -> T) -> Result<T> {
+pub fn with_read<T>(f: impl FnOnce(Result<&mut [u8]>) -> T) -> T {
     let size = size();
     crate::with_byte_buffer(size, |buffer| {
         let mut len = 0u32;
@@ -165,8 +165,7 @@ pub fn with_read<T>(f: impl FnOnce(&mut [u8]) -> T) -> Result<T> {
             unsafe { gsys::gr_read(0, size as u32, buffer.as_mut_ptr(), &mut len as *mut u32) }
         }
 
-        SyscallError(len).into_result()?;
-        Ok(f(buffer))
+        f(SyscallError(len).into_result().map(|_| buffer))
     })
 }
 

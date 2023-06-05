@@ -1,3 +1,5 @@
+use core::mem::MaybeUninit;
+
 use crate::{ActorId, MessageId};
 use alloc::vec;
 use gsys::stack_buffer::{get_stack_buffer_global, set_stack_buffer_global, StackBuffer};
@@ -42,7 +44,7 @@ fn call_const_getter<T: Clone + From<K>, K: Clone + From<T>>(
 }
 
 #[inline(never)]
-fn with_const_byte_buffer<T, const N: usize>(size: usize, f: impl FnOnce(&mut [u8]) -> T) -> T {
+fn with_byte_array<T, const N: usize>(size: usize, f: impl FnOnce(&mut [u8]) -> T) -> T {
     let mut buffer = [0u8; N];
     let sub_buffer = &mut buffer[0..size];
     f(sub_buffer)
@@ -50,23 +52,34 @@ fn with_const_byte_buffer<T, const N: usize>(size: usize, f: impl FnOnce(&mut [u
 
 pub fn with_byte_buffer<T>(size: usize, f: impl FnOnce(&mut [u8]) -> T) -> T {
     match size {
-        size if size <= 0x1 => with_const_byte_buffer::<_, 0x1>(size, f),
-        size if size <= 0x2 => with_const_byte_buffer::<_, 0x2>(size, f),
-        size if size <= 0x4 => with_const_byte_buffer::<_, 0x4>(size, f),
-        size if size <= 0x8 => with_const_byte_buffer::<_, 0x8>(size, f),
-        size if size <= 0x10 => with_const_byte_buffer::<_, 0x10>(size, f),
-        size if size <= 0x20 => with_const_byte_buffer::<_, 0x20>(size, f),
-        size if size <= 0x40 => with_const_byte_buffer::<_, 0x40>(size, f),
-        size if size <= 0x80 => with_const_byte_buffer::<_, 0x80>(size, f),
-        size if size <= 0x100 => with_const_byte_buffer::<_, 0x100>(size, f),
-        size if size <= 0x200 => with_const_byte_buffer::<_, 0x200>(size, f),
-        size if size <= 0x400 => with_const_byte_buffer::<_, 0x400>(size, f),
-        size if size <= 0x800 => with_const_byte_buffer::<_, 0x800>(size, f),
-        size if size <= 0x1000 => with_const_byte_buffer::<_, 0x1000>(size, f),
-        size if size <= 0x2000 => with_const_byte_buffer::<_, 0x2000>(size, f),
-        size if size <= 0x4000 => with_const_byte_buffer::<_, 0x4000>(size, f),
+        size if size <= 0x1 => with_byte_array::<_, 0x1>(size, f),
+        size if size <= 0x2 => with_byte_array::<_, 0x2>(size, f),
+        size if size <= 0x4 => with_byte_array::<_, 0x4>(size, f),
+        size if size <= 0x8 => with_byte_array::<_, 0x8>(size, f),
+        size if size <= 0x10 => with_byte_array::<_, 0x10>(size, f),
+        size if size <= 0x20 => with_byte_array::<_, 0x20>(size, f),
+        size if size <= 0x40 => with_byte_array::<_, 0x40>(size, f),
+        size if size <= 0x80 => with_byte_array::<_, 0x80>(size, f),
+        size if size <= 0x100 => with_byte_array::<_, 0x100>(size, f),
+        size if size <= 0x200 => with_byte_array::<_, 0x200>(size, f),
+        size if size <= 0x400 => with_byte_array::<_, 0x400>(size, f),
+        size if size <= 0x800 => with_byte_array::<_, 0x800>(size, f),
+        size if size <= 0x1000 => with_byte_array::<_, 0x1000>(size, f),
+        size if size <= 0x2000 => with_byte_array::<_, 0x2000>(size, f),
+        size if size <= 0x4000 => with_byte_array::<_, 0x4000>(size, f),
         _ => f(vec![0; size].as_mut_slice()),
     }
+}
+
+/// +_+_+
+pub fn with_stack_buffer<T>(f: impl FnOnce() -> T) -> T {
+    let uninit = MaybeUninit::<StackBuffer>::uninit();
+    let stack_buffer = unsafe { uninit.assume_init() };
+    let stack_buffer_offset = &stack_buffer as *const StackBuffer as usize;
+    let mut global = unsafe { get_stack_buffer_global() };
+    global |= stack_buffer_offset as u64;
+    unsafe { set_stack_buffer_global(global) };
+    f()
 }
 
 pub fn origin() -> ActorId {

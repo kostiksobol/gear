@@ -18,7 +18,7 @@
 
 use crate::{
     async_runtime::signals,
-    errors::{IntoContractResult, Result},
+    errors::{ContractError, IntoContractResult, Result},
     msg::{utils, CodecMessageFuture, MessageFuture},
     prelude::{convert::AsRef, ops::RangeBounds, vec, Vec},
     ActorId, MessageId, ReservationId,
@@ -314,6 +314,11 @@ pub fn load_bytes() -> Result<Vec<u8>> {
     let mut result = vec![0u8; size()];
     gcore::msg::read(result.as_mut())?;
     Ok(result)
+}
+
+/// +_+_+
+pub fn with_read_bytes<T>(f: impl FnOnce(Result<&mut [u8]>) -> T) -> T {
+    gcore::msg::with_read(|read_res| f(read_res.map_err(|err| ContractError::Ext(err))))
 }
 
 /// Send a new message as a reply to the message that is currently being
