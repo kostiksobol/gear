@@ -10,4 +10,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 galloc.workspace = true
-gcore.workspace = true
+gcore = { workspace = true }

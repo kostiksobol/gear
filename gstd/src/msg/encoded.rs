@@ -27,9 +27,8 @@ use crate::{
     prelude::{convert::AsRef, ops::RangeBounds},
     ActorId, MessageId, ReservationId,
 };
-use alloc::vec::Vec;
 use gstd_codegen::wait_for_reply;
-use scale_info::scale::{Decode, Encode, MaxEncodedLen};
+use scale_info::scale::{Decode, Encode};
 
 /// Get a payload of the message that is currently being processed.
 ///
@@ -83,7 +82,7 @@ pub fn with_loaded<D: Decode, R>(mut f: impl FnMut(Result<D>) -> R) -> R {
 
     #[cfg(not(feature = "stack_buffer"))]
     {
-        Ok(f(load()))
+        f(load())
     }
 }
 
