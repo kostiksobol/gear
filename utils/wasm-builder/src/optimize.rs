@@ -75,9 +75,6 @@ impl Optimizer {
                 0
             };
 
-        // let s = wasmprinter::print_bytes(&module_bytes).expect("wasmprinter failed");
-        // log::trace!(target: "gear", "================================= \n{}\n\n", s);
-
         let stack_buffer_offset = match stack_end::insert_stack_end_export(
             &module_bytes,
             &mut self.module,

@@ -75,6 +75,8 @@ pub fn insert_stack_end_export(
         name.ends_with(STACK_POINTER_GLOBAL_SUFFIX)
     });
 
+    log::debug!("Global with name ends {STACK_POINTER_GLOBAL_SUFFIX} is {stack_pointer_index:?}");
+
     if let Some(export_section) = module.export_section_mut() {
         let exports = export_section.entries_mut();
         if let Some(index) = exports

@@ -20,6 +20,7 @@ use ft_io::*;
 use gmeta::Metadata;
 use gstd::{debug, errors::Result as GstdResult, exec, msg, prelude::*, ActorId, MessageId};
 use hashbrown::HashMap;
+use core::ops::Range;
 
 const ZERO_ID: ActorId = ActorId::new([0u8; 32]);
 
@@ -42,6 +43,21 @@ struct FungibleToken {
 static mut FUNGIBLE_TOKEN: Option<FungibleToken> = None;
 
 impl FungibleToken {
+    /// Executed on receiving `fungible-token-messages::MintInput`.
+    fn test_set(&mut self, user_ids: Range<u64>, amount: u128) {
+        let len = user_ids.end - user_ids.start;
+        // if self.balances.is_empty() {
+        //     self.balances.reserve(len as usize);
+        // } else {
+        //     self.balances.reserve(len as usize / 2);
+        // };
+        self.total_supply += amount * len as u128;
+        for user_id in user_ids {
+            let mut arr = [0u8; 32];
+            arr[0..8].copy_from_slice(&user_id.to_le_bytes()[..]);
+            self.balances.insert(arr.into(), amount);
+        }
+    }
     /// Executed on receiving `fungible-token-messages::MintInput`.
     fn mint(&mut self, amount: u128) {
         self.balances
@@ -130,9 +146,9 @@ impl FungibleToken {
     }
 
     fn can_transfer(&mut self, from: &ActorId, amount: u128) -> bool {
-        if from == &msg::source()
-            || from == &exec::origin()
-            || self.balances.get(&msg::source()).unwrap_or(&0) >= &amount
+        if *from == msg::source()
+            || *from == exec::origin()
+            || *self.balances.get(&msg::source()).unwrap_or(&0) >= amount
         {
             return true;
         }
@@ -141,7 +157,7 @@ impl FungibleToken {
             .get(from)
             .and_then(|m| m.get(&msg::source()))
         {
-            if allowed_amount >= &amount {
+            if *allowed_amount >= amount {
                 self.allowances.entry(*from).and_modify(|m| {
                     m.entry(msg::source()).and_modify(|a| *a -= amount);
                 });
@@ -216,6 +232,7 @@ extern "C" fn handle() {
             let balance = ft.balances.get(&account).unwrap_or(&0);
             msg::reply(FTEvent::Balance(*balance), 0).unwrap();
         }
+        FTAction::TestSet(user_ids, amount) => ft.test_set(user_ids, amount),
     }
 }
 
@@ -226,6 +243,7 @@ extern "C" fn init() {
         name: config.name,
         symbol: config.symbol,
         decimals: config.decimals,
+        balances: HashMap::with_capacity(300_000),
         ..Default::default()
     };
     unsafe { FUNGIBLE_TOKEN = Some(ft) };

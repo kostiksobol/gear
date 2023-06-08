@@ -1888,12 +1888,16 @@ name = "demo-fungible-token"
 version = "0.1.4"
 dependencies = [
  "ft-io",
+ "futures",
  "gclient",
+ "gear-core",
  "gear-wasm-builder",
  "gmeta",
  "gstd",
  "hashbrown 0.13.2",
+ "rand 0.8.5",
  "tokio",
+ "wasmprinter",
 ]
 
 [[package]]

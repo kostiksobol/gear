@@ -6,6 +6,5 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-default = ["stack_buffer", "stack_pointer_global_index_is_zero"]
 stack_buffer = []
 stack_pointer_global_index_is_zero = []

@@ -157,7 +157,7 @@ gcore = { path = "gcore" }
 gcli = { path = "gcli" }
 gclient = { path = "gclient" }
 gsdk = { path = "gsdk" }
-gstd = { path = "gstd", features = ["optimized"] }
+gstd = { path = "gstd" }
 gsys = { path = "gsys" }
 gtest = { path = "gtest" }
 gmeta = { path = "gmeta" }

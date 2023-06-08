@@ -770,6 +770,10 @@ pub fn send_bytes_delayed_from_reservation<T: AsRef<[u8]>>(
 /// }
 /// ```
 pub fn size() -> usize {
+    #[cfg(feature = "debug")]
+    panic!();
+
+    #[cfg(not(feature = "debug"))]
     gcore::msg::size()
 }
 

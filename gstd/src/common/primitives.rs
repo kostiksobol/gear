@@ -116,7 +116,6 @@ impl AsMut<[u8]> for ActorId {
     }
 }
 
-#[cfg(feature = "debug")]
 impl From<u64> for ActorId {
     fn from(v: u64) -> Self {
         let mut arr = [0u8; 32];

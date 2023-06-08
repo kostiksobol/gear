@@ -18,6 +18,8 @@
 
 #![no_std]
 
+use core::ops::Range;
+
 use gmeta::{In, InOut, Metadata};
 use gstd::{prelude::*, ActorId};
 
@@ -45,6 +47,7 @@ pub struct InitConfig {
 #[codec(crate = gstd::codec)]
 #[scale_info(crate = gstd::scale_info)]
 pub enum FTAction {
+    TestSet(Range<u64>, u128),
     Mint(u128),
     Burn(u128),
     Transfer {
