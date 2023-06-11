@@ -178,6 +178,7 @@ impl pallet_gear::Config for Test {
     type ProgramRentFreePeriod = RentFreePeriod;
     type ProgramRentMinimalResumePeriod = RentResumePeriod;
     type ProgramRentCostPerBlock = RentCostPerBlock;
+    type Builtins = ();
 }
 
 impl pallet_gear_scheduler::Config for Test {

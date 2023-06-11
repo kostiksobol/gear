@@ -36,6 +36,8 @@ pub mod manager;
 pub mod migration;
 pub mod weights;
 
+pub mod builtin;
+
 #[cfg(test)]
 mod mock;
 
@@ -274,6 +276,9 @@ pub mod pallet {
         /// The program rent cost per block.
         #[pallet::constant]
         type ProgramRentCostPerBlock: Get<BalanceOf<Self>>;
+
+        /// Builtin handler.
+        type Builtins: builtin::BuiltinHandler;
     }
 
     #[pallet::pallet]

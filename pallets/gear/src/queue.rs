@@ -18,6 +18,8 @@
 
 use super::*;
 
+use crate::builtin::BuiltinHandler;
+
 pub(crate) enum ActorResult {
     Continue,
     Data(Option<ExecutableActorData>),
@@ -85,6 +87,14 @@ where
             let program_id = dispatch.destination();
             let dispatch_id = dispatch.id();
             let dispatch_reply = dispatch.reply().is_some();
+
+            let dispatch = match <T as Config>::Builtins::handle(dispatch) {
+                builtin::BuiltinExecution::Handled(journal) => {
+                    core_processor::handle_journal(journal, &mut ext_manager);
+                    continue;
+                },
+                builtin::BuiltinExecution::NoMatch(dispatch) => dispatch,
+            };
 
             // To start executing a message resources of a destination program should be
             // fetched from the storage.
