@@ -6858,6 +6858,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-builtins"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "gear-core",
+ "pallet-gear",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-std 5.0.0",
+]
+
+[[package]]
 name = "pallet-conviction-voting"
 version = "4.0.0-dev"
 source = "git+https://github.com/gear-tech/substrate.git?branch=gear-polkadot-v0.9.41-canary#34efda72d128b336f3afd72d70098deccd79c6c2"
