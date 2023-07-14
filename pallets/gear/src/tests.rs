@@ -72,12 +72,49 @@ use gear_core::{
 };
 use gear_core_errors::*;
 use gear_wasm_instrument::STACK_END_EXPORT_NAME;
+use gstd::errors::Error as GstdError;
 use sp_runtime::{traits::UniqueSaturatedInto, SaturatedConversion};
 use sp_std::convert::TryFrom;
 pub use utils::init_logger;
 use utils::*;
 
 type Gas = <<Test as Config>::GasProvider as common::GasProvider>::GasTree;
+
+#[test]
+fn calculate_gas_returns_not_block_limit() {
+    use demo_program_generator::{CHILD_WAT, WASM_BINARY};
+
+    init_logger();
+    new_test_ext().execute_with(|| {
+        let code = ProgramCodeKind::Custom(CHILD_WAT).to_bytes();
+        assert_ok!(Gear::upload_code(RuntimeOrigin::signed(USER_1), code));
+        assert_ok!(Gear::upload_program(
+            RuntimeOrigin::signed(USER_1),
+            WASM_BINARY.to_vec(),
+            DEFAULT_SALT.to_vec(),
+            EMPTY_PAYLOAD.to_vec(),
+            BlockGasLimitOf::<Test>::get(),
+            0,
+        ));
+
+        let generator_id = get_last_program_id();
+
+        run_to_next_block(None);
+        assert!(Gear::is_active(generator_id));
+
+        let GasInfo { min_limit, .. } = Gear::calculate_gas_info(
+            USER_1.into_origin(),
+            HandleKind::Handle(generator_id),
+            EMPTY_PAYLOAD.to_vec(),
+            0,
+            true,
+            true,
+        )
+        .expect("calculate_gas_info failed");
+
+        assert_ne!(min_limit, BlockGasLimitOf::<Test>::get());
+    });
+}
 
 #[test]
 fn read_big_state() {
@@ -6617,8 +6654,8 @@ fn pay_program_rent_syscall_works() {
 
         let error_text = if cfg!(any(feature = "debug", debug_assertions)) {
             format!(
-                "{PAY_PROGRAM_RENT_EXPECT}: Ext({:?})",
-                ExtError::Execution(ExecutionError::NotEnoughValue)
+                "{PAY_PROGRAM_RENT_EXPECT}: {:?}",
+                GstdError::Core(ExtError::Execution(ExecutionError::NotEnoughValue).into())
             )
         } else {
             String::from("no info")
@@ -6662,8 +6699,10 @@ fn pay_program_rent_syscall_works() {
 
         let error_text = if cfg!(any(feature = "debug", debug_assertions)) {
             format!(
-                "{PAY_PROGRAM_RENT_EXPECT}: Ext({:?})",
-                ExtError::ProgramRent(ProgramRentError::MaximumBlockCountPaid)
+                "{PAY_PROGRAM_RENT_EXPECT}: {:?}",
+                GstdError::Core(
+                    ExtError::ProgramRent(ProgramRentError::MaximumBlockCountPaid).into()
+                )
             )
         } else {
             String::from("no info")
@@ -7778,8 +7817,8 @@ fn test_create_program_with_value_lt_ed() {
 
         let error_text = if cfg!(any(feature = "debug", debug_assertions)) {
             format!(
-                "Failed to create program: Ext({:?})",
-                ExtError::Message(MessageError::InsufficientValue)
+                "Failed to create program: {:?}",
+                GstdError::Core(ExtError::Message(MessageError::InsufficientValue).into())
             )
         } else {
             String::from("no info")
@@ -7831,8 +7870,8 @@ fn test_create_program_with_exceeding_value() {
 
         let error_text = if cfg!(any(feature = "debug", debug_assertions)) {
             format!(
-                "Failed to create program: Ext({:?})",
-                ExtError::Execution(ExecutionError::NotEnoughValue)
+                "Failed to create program: {:?}",
+                GstdError::Core(ExtError::Execution(ExecutionError::NotEnoughValue).into())
             )
         } else {
             String::from("no info")
@@ -8937,6 +8976,96 @@ fn test_async_messages() {
 
         assert!(Gear::is_active(pid));
     })
+}
+
+#[test]
+fn program_generator_works() {
+    use demo_program_generator::{CHILD_WAT, WASM_BINARY};
+
+    init_logger();
+    new_test_ext().execute_with(|| {
+        let code = ProgramCodeKind::Custom(CHILD_WAT).to_bytes();
+        let code_id = CodeId::generate(&code);
+
+        assert_ok!(Gear::upload_code(RuntimeOrigin::signed(USER_1), code));
+
+        assert_ok!(Gear::upload_program(
+            RuntimeOrigin::signed(USER_1),
+            WASM_BINARY.to_vec(),
+            DEFAULT_SALT.to_vec(),
+            EMPTY_PAYLOAD.to_vec(),
+            BlockGasLimitOf::<Test>::get(),
+            0,
+        ));
+
+        let generator_id = get_last_program_id();
+
+        run_to_next_block(None);
+
+        assert!(Gear::is_active(generator_id));
+
+        assert_ok!(Gear::send_message(
+            RuntimeOrigin::signed(USER_1),
+            generator_id,
+            EMPTY_PAYLOAD.to_vec(),
+            BlockGasLimitOf::<Test>::get(),
+            0
+        ));
+
+        let message_id = get_last_message_id();
+
+        run_to_next_block(None);
+
+        assert_succeed(message_id);
+        let expected_salt = [b"salt_generator", message_id.as_ref(), &0u64.to_be_bytes()].concat();
+        let expected_child_id = ProgramId::generate(code_id, &expected_salt);
+        assert!(ProgramStorageOf::<Test>::program_exists(expected_child_id))
+    });
+}
+
+#[test]
+fn wait_state_machine() {
+    use demo_wait::WASM_BINARY;
+
+    init_logger();
+
+    let init = || {
+        assert_ok!(Gear::upload_program(
+            RuntimeOrigin::signed(USER_1),
+            WASM_BINARY.to_vec(),
+            DEFAULT_SALT.to_vec(),
+            Default::default(),
+            BlockGasLimitOf::<Test>::get(),
+            0,
+        ));
+
+        let wait_id = get_last_program_id();
+
+        run_to_next_block(None);
+
+        assert!(Gear::is_active(wait_id));
+
+        System::reset_events();
+
+        wait_id
+    };
+
+    new_test_ext().execute_with(|| {
+        let demo = init();
+
+        let to_send = vec![b"FIRST".to_vec(), b"SECOND".to_vec(), b"THIRD".to_vec()];
+        let ids = send_payloads(USER_1, demo, to_send);
+        run_to_next_block(None);
+
+        let to_assert = vec![
+            Assertion::ReplyCode(ReplyCode::Success(SuccessReplyReason::Auto)),
+            Assertion::ReplyCode(ReplyCode::Success(SuccessReplyReason::Auto)),
+            Assertion::Payload(ids[0].as_ref().to_vec()),
+            Assertion::ReplyCode(ReplyCode::Success(SuccessReplyReason::Auto)),
+            Assertion::Payload(ids[1].as_ref().to_vec()),
+        ];
+        assert_responses_to_user(USER_1, to_assert);
+    });
 }
 
 #[test]
