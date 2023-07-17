@@ -170,3 +170,7 @@ pub fn pre_process_memory_accesses(
     *gas_left = gas_left_new;
     res
 }
+
+pub fn bench_write(key_len: u32, data_len: u32) -> u64 {
+    gear_ri::bench_write(key_len, data_len)
+}

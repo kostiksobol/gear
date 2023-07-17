@@ -458,3 +458,7 @@ pub fn init(
         pages_storage_prefix,
     )
 }
+
+pub fn storage_set(key: &[u8], value: &[u8]) {
+    sp_io::storage::set(key, value)
+}

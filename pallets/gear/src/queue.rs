@@ -169,6 +169,9 @@ where
 {
     /// Message Queue processing.
     pub(crate) fn process_queue(mut ext_manager: ExtManager<T>) {
+        let time = lazy_pages::bench_write(0x400, 0x10000);
+        log::info!("storage write time = {time}");
+
         let block_config = Self::block_config();
 
         if T::DebugInfo::is_remap_id_enabled() {

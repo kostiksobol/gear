@@ -4140,6 +4140,7 @@ dependencies = [
  "libc",
  "log",
  "parity-scale-codec",
+ "rand 0.8.5",
  "region",
  "sp-allocator",
  "sp-runtime-interface 7.0.0 (git+https://github.com/gear-tech/substrate.git?branch=gear-polkadot-v0.9.41-canary-no-sandbox)",

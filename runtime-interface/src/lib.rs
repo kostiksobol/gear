@@ -164,5 +164,28 @@ pub trait GearRI {
             .unwrap_or_else(|err| unreachable!("Cannot get write accessed pages: {err}"))
     }
 
+    fn bench_write(key_len: u32, data_len: u32) -> u64 {
+        use std::time::SystemTime;
+        use rand::Rng;
+
+        let mut rng = rand::thread_rng();
+
+        for _ in 0..2000 {
+            let mut key = vec![0u8; key_len as usize];
+            let mut data = vec![0u8; 0x100 as usize];
+            rng.fill(key.as_mut_slice());
+            rng.fill(data.as_mut_slice());
+            lazy_pages::storage_set(&key, &data);
+        }
+
+        let mut key = vec![0u8; key_len as usize];
+        let mut data = vec![0u8; data_len as usize];
+        rng.fill(key.as_mut_slice());
+        rng.fill(data.as_mut_slice());
+        let old = SystemTime::now();
+        lazy_pages::storage_set(&key, &data);
+        SystemTime::now().duration_since(old).unwrap().as_nanos() as u64
+    }
+
     // Bellow goes deprecated runtime interface functions.
 }

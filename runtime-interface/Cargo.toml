@@ -23,6 +23,7 @@ derive_more.workspace = true
 static_assertions.workspace = true
 region = { workspace = true, optional = true }
 gear-sandbox-host = { workspace = true, optional = true }
+rand = { version = "0.8", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { workspace = true, features = ["memoryapi"] }
@@ -39,5 +40,6 @@ std = [
 	"gear-lazy-pages",
 	"region",
 	"gear-sandbox-host",
+	"rand",
 ]
 host-sandbox = ["gear-sandbox-host?/host-sandbox"]
