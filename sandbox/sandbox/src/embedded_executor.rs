@@ -19,7 +19,6 @@
 //! An embedded WASM executor utilizing `wasmi`.
 
 use alloc::string::String;
-use std::marker::PhantomData;
 
 use sp_wasm_interface::HostPointer;
 use wasmi::{
@@ -39,15 +38,15 @@ use crate::{
 };
 
 #[doc(hidden)]
-pub struct Store<'a, T>(wasmi::Caller<'a, T>);
+pub struct Caller<'a, T>(wasmi::Caller<'a, T>);
 
-impl<T> SandboxStore<T> for Store<'_, T> {
+impl<T> SandboxStore<T> for Caller<'_, T> {
     fn data_mut(&mut self) -> &mut T {
         self.0.data_mut()
     }
 }
 
-impl<T> AsContext for Store<'_, T> {
+impl<T> AsContext for Caller<'_, T> {
     type UserState = T;
 
     fn as_context(&self) -> StoreContext<Self::UserState> {
@@ -55,31 +54,23 @@ impl<T> AsContext for Store<'_, T> {
     }
 }
 
-impl<T> AsContextMut for Store<'_, T> {
+impl<T> AsContextMut for Caller<'_, T> {
     fn as_context_mut(&mut self) -> StoreContextMut<Self::UserState> {
         self.0.as_context_mut()
     }
 }
 
 /// The linear memory used by the sandbox.
-pub struct Memory<'a, T> {
+#[derive(Clone)]
+pub struct Memory {
     memref: wasmi::Memory,
-    _store: PhantomData<&'a mut T>,
 }
 
-impl<'a, T> Clone for Memory<'a, T> {
-    fn clone(&self) -> Self {
-        Self {
-            memref: self.memref,
-            _store: PhantomData,
-        }
-    }
-}
+impl<T> super::SandboxMemory<T> for Memory {
+    type Store<'a> = Caller<'a, T>
+    where T: 'a;
 
-impl<'a, T> super::SandboxMemory<T> for Memory<'a, T> {
-    type Store = Store<'a, T>;
-
-    fn get(&self, store: &Self::Store, ptr: u32, buf: &mut [u8]) -> Result<(), Error> {
+    fn get(&self, store: &Self::Store<'_>, ptr: u32, buf: &mut [u8]) -> Result<(), Error> {
         let data = self
             .memref
             .data(store)
@@ -89,7 +80,7 @@ impl<'a, T> super::SandboxMemory<T> for Memory<'a, T> {
         Ok(())
     }
 
-    fn set(&self, store: &mut Self::Store, ptr: u32, value: &[u8]) -> Result<(), Error> {
+    fn set(&self, store: &mut Self::Store<'_>, ptr: u32, value: &[u8]) -> Result<(), Error> {
         let data = self
             .memref
             .data_mut(store)
@@ -99,7 +90,7 @@ impl<'a, T> super::SandboxMemory<T> for Memory<'a, T> {
         Ok(())
     }
 
-    fn grow(&self, store: &mut Self::Store, pages: u32) -> Result<u32, Error> {
+    fn grow(&self, store: &mut Self::Store<'_>, pages: u32) -> Result<u32, Error> {
         let pages = Pages::new(pages).ok_or(Error::MemoryGrow)?;
         self.memref
             .grow(store, pages)
@@ -107,11 +98,11 @@ impl<'a, T> super::SandboxMemory<T> for Memory<'a, T> {
             .map_err(|_| Error::MemoryGrow)
     }
 
-    fn size(&self, store: &Self::Store) -> u32 {
+    fn size(&self, store: &Self::Store<'_>) -> u32 {
         self.memref.current_pages(store).into()
     }
 
-    unsafe fn get_buff(&self, store: &mut Self::Store) -> u64 {
+    unsafe fn get_buff(&self, store: &mut Self::Store<'_>) -> u64 {
         self.memref.data_mut(store).as_mut_ptr() as usize as u64
     }
 }
@@ -128,7 +119,7 @@ pub struct EnvironmentDefinitionBuilder<T> {
     store: wasmi::Store<T>,
 }
 
-impl<'a, T> super::SandboxEnvironmentBuilder<T, Memory<'a, T>> for EnvironmentDefinitionBuilder<T> {
+impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBuilder<T> {
     fn new(state: T) -> Self {
         let engine = Engine::default();
         let store = wasmi::Store::new(&engine, state);
@@ -139,17 +130,10 @@ impl<'a, T> super::SandboxEnvironmentBuilder<T, Memory<'a, T>> for EnvironmentDe
         }
     }
 
-    fn create_memory(
-        &mut self,
-        initial: u32,
-        maximum: Option<u32>,
-    ) -> Result<Memory<'a, T>, Error> {
+    fn create_memory(&mut self, initial: u32, maximum: Option<u32>) -> Result<Memory, Error> {
         let ty = MemoryType::new(initial, maximum).map_err(|_| Error::Module)?;
         let memref = wasmi::Memory::new(&mut self.store, ty).map_err(|_| Error::Module)?;
-        Ok(Memory {
-            memref,
-            _store: PhantomData,
-        })
+        Ok(Memory { memref })
     }
 
     fn add_host_func<N1, N2, F, Args, R>(&mut self, module: N1, field: N2, f: F)
@@ -166,7 +150,7 @@ impl<'a, T> super::SandboxEnvironmentBuilder<T, Memory<'a, T>> for EnvironmentDe
         let func = Func::new(&mut self.store, ty, move |caller, args, results| {
             let args: Vec<Value> = args.iter().cloned().map(to_interface).collect();
             let value = f
-                .call(&mut Store(caller), &args)
+                .call(&mut Caller(caller), &args)
                 .map(R::into_return_value)
                 .map_err(|HostError| Trap::new("Error calling host function"))?;
             match value {
@@ -182,7 +166,7 @@ impl<'a, T> super::SandboxEnvironmentBuilder<T, Memory<'a, T>> for EnvironmentDe
             .insert((module.into(), field.into()), ExternVal::HostFunc(func));
     }
 
-    fn add_memory<N1, N2>(&mut self, module: N1, field: N2, mem: Memory<'a, T>)
+    fn add_memory<N1, N2>(&mut self, module: N1, field: N2, mem: Memory)
     where
         N1: Into<String>,
         N2: Into<String>,
@@ -193,10 +177,9 @@ impl<'a, T> super::SandboxEnvironmentBuilder<T, Memory<'a, T>> for EnvironmentDe
 }
 
 /// Sandboxed instance of a WASM module.
-pub struct Instance<'a, T> {
+pub struct Instance<T> {
     store: wasmi::Store<T>,
     instance: wasmi::Instance,
-    _caller: PhantomData<&'a ()>,
 }
 
 /// Unit-type as InstanceGlobals for wasmi executor.
@@ -212,10 +195,9 @@ impl super::InstanceGlobals for InstanceGlobals {
     }
 }
 
-impl<'a, T: 'a> super::SandboxInstance for Instance<'a, T> {
+impl<T> super::SandboxInstance for Instance<T> {
     type State = T;
-    type Store = Store<'a, T>;
-    type Memory = Memory<'a, T>;
+    type Memory = Memory;
     type EnvironmentBuilder = EnvironmentDefinitionBuilder<T>;
     type InstanceGlobals = InstanceGlobals;
 
@@ -244,11 +226,7 @@ impl<'a, T: 'a> super::SandboxInstance for Instance<'a, T> {
             .map_err(|_| Error::Module)?;
         let instance = instance_pre.start(&mut store).map_err(|_| Error::Module)?;
 
-        Ok(Instance {
-            store,
-            instance,
-            _caller: PhantomData,
-        })
+        Ok(Instance { store, instance })
     }
 
     fn invoke(&mut self, name: &str, args: &[Value]) -> Result<ReturnValue, Error> {

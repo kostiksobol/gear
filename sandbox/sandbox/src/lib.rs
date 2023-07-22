@@ -101,32 +101,34 @@ pub trait SandboxStore<T> {
 /// The memory can't be directly accessed by supervisor, but only
 /// through designated functions [`get`](SandboxMemory::get) and [`set`](SandboxMemory::set).
 pub trait SandboxMemory<T>: Sized + Clone {
-    type Store: SandboxStore<T>;
+    type Store<'a>: SandboxStore<T>
+    where
+        T: 'a;
 
     /// Read a memory area at the address `ptr` with the size of the provided slice `buf`.
     ///
     /// Returns `Err` if the range is out-of-bounds.
-    fn get(&self, store: &Self::Store, ptr: u32, buf: &mut [u8]) -> Result<(), Error>;
+    fn get(&self, store: &Self::Store<'_>, ptr: u32, buf: &mut [u8]) -> Result<(), Error>;
 
     /// Write a memory area at the address `ptr` with contents of the provided slice `buf`.
     ///
     /// Returns `Err` if the range is out-of-bounds.
-    fn set(&self, store: &mut Self::Store, ptr: u32, value: &[u8]) -> Result<(), Error>;
+    fn set(&self, store: &mut Self::Store<'_>, ptr: u32, value: &[u8]) -> Result<(), Error>;
 
     /// Grow memory with provided number of pages.
     ///
     /// Returns `Err` if attempted to allocate more memory than permitted by the limit.
-    fn grow(&self, store: &mut Self::Store, pages: u32) -> Result<u32, Error>;
+    fn grow(&self, store: &mut Self::Store<'_>, pages: u32) -> Result<u32, Error>;
 
     /// Returns current memory size.
     ///
     /// Maximum memory size cannot exceed 65536 pages or 4GiB.
-    fn size(&self, store: &Self::Store) -> u32;
+    fn size(&self, store: &Self::Store<'_>) -> u32;
 
     /// Returns pointer to the begin of wasm mem buffer
     /// # Safety
     /// Pointer is intended to use by `mprotect` function.
-    unsafe fn get_buff(&self, store: &mut Self::Store) -> HostPointer;
+    unsafe fn get_buff(&self, store: &mut Self::Store<'_>) -> HostPointer;
 }
 
 pub trait SandboxFunctionArg: Sized {
@@ -282,8 +284,6 @@ pub trait SandboxEnvironmentBuilder<State, Memory>: Sized {
 /// This instance can be used for invoking exported functions.
 pub trait SandboxInstance: Sized {
     type State;
-
-    type Store: SandboxStore<Self::State>;
 
     /// The memory type used for this sandbox.
     type Memory: SandboxMemory<Self::State>;
