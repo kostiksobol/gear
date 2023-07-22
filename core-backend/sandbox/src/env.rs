@@ -171,11 +171,8 @@ where
 {
     fn add_func(&mut self, name: SysCallName, f: HostFuncType<Runtime<Ext>>) {
         if self.forbidden_funcs.contains(&name) {
-            self.env_def_builder.add_host_func(
-                "env",
-                name.to_str(),
-                wrap_common_func!(FuncsHandler::forbidden, () -> ()),
-            );
+            self.env_def_builder
+                .add_host_func("env", name.to_str(), FuncsHandler::forbidden);
         } else {
             self.env_def_builder.add_host_func("env", name.to_str(), f);
         }
@@ -333,7 +330,7 @@ where
             termination_reason: ActorTerminationReason::Success.into(),
         };
 
-        match Instance::new(binary, &env_builder, &mut runtime) {
+        match Instance::new(binary, env_builder) {
             Ok(instance) => Ok(Self {
                 instance,
                 runtime,

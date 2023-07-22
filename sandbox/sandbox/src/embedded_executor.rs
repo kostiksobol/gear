@@ -19,272 +19,188 @@
 //! An embedded WASM executor utilizing `wasmi`.
 
 use alloc::string::String;
+use std::marker::PhantomData;
 
 use sp_wasm_interface::HostPointer;
 use wasmi::{
-    memory_units::Pages, Externals, FuncInstance, FuncRef, GlobalDescriptor, GlobalRef,
-    ImportResolver, MemoryDescriptor, MemoryInstance, MemoryRef, Module, ModuleInstance, ModuleRef,
-    RuntimeArgs, RuntimeValue, Signature, TableDescriptor, TableRef, Trap,
+    AsContext, AsContextMut, Engine, Func, FuncType, Linker, MemoryType, Module, StoreContext,
+    StoreContextMut,
 };
 
-use sp_std::{
-    borrow::ToOwned, collections::btree_map::BTreeMap, fmt, marker::PhantomData, prelude::*,
+use sp_std::{collections::btree_map::BTreeMap, prelude::*};
+use wasmi::{
+    core::{Pages, Trap, ValueType as RuntimeValueType},
+    Value as RuntimeValue,
 };
 
-use crate::{Error, HostError, HostFuncType, ReturnValue, Value, TARGET};
+use crate::{
+    Error, HostError, ReturnValue, SandboxFunction, SandboxFunctionArgs, SandboxFunctionResult,
+    SandboxStore, Value, ValueType,
+};
 
-/// The linear memory used by the sandbox.
-#[derive(Clone)]
-pub struct Memory {
-    memref: MemoryRef,
+#[doc(hidden)]
+pub struct Store<'a, T>(wasmi::Caller<'a, T>);
+
+impl<T> SandboxStore<T> for Store<'_, T> {
+    fn data_mut(&mut self) -> &mut T {
+        self.0.data_mut()
+    }
 }
 
-impl super::SandboxMemory for Memory {
-    fn new(initial: u32, maximum: Option<u32>) -> Result<Memory, Error> {
-        Ok(Memory {
-            memref: MemoryInstance::alloc(
-                Pages(initial as usize),
-                maximum.map(|m| Pages(m as usize)),
-            )
-            .map_err(|_| Error::Module)?,
-        })
-    }
+impl<T> AsContext for Store<'_, T> {
+    type UserState = T;
 
-    fn get(&self, ptr: u32, buf: &mut [u8]) -> Result<(), Error> {
-        self.memref
-            .get_into(ptr, buf)
-            .map_err(|_| Error::OutOfBounds)?;
+    fn as_context(&self) -> StoreContext<Self::UserState> {
+        self.0.as_context()
+    }
+}
+
+impl<T> AsContextMut for Store<'_, T> {
+    fn as_context_mut(&mut self) -> StoreContextMut<Self::UserState> {
+        self.0.as_context_mut()
+    }
+}
+
+/// The linear memory used by the sandbox.
+pub struct Memory<'a, T> {
+    memref: wasmi::Memory,
+    _store: PhantomData<&'a mut T>,
+}
+
+impl<'a, T> Clone for Memory<'a, T> {
+    fn clone(&self) -> Self {
+        Self {
+            memref: self.memref,
+            _store: PhantomData,
+        }
+    }
+}
+
+impl<'a, T> super::SandboxMemory<T> for Memory<'a, T> {
+    type Store = Store<'a, T>;
+
+    fn get(&self, store: &Self::Store, ptr: u32, buf: &mut [u8]) -> Result<(), Error> {
+        let data = self
+            .memref
+            .data(store)
+            .get((ptr as usize)..(ptr as usize + buf.len()))
+            .ok_or(Error::OutOfBounds)?;
+        buf[..].copy_from_slice(data);
         Ok(())
     }
 
-    fn set(&self, ptr: u32, value: &[u8]) -> Result<(), Error> {
-        self.memref
-            .set(ptr, value)
-            .map_err(|_| Error::OutOfBounds)?;
+    fn set(&self, store: &mut Self::Store, ptr: u32, value: &[u8]) -> Result<(), Error> {
+        let data = self
+            .memref
+            .data_mut(store)
+            .get_mut((ptr as usize)..(ptr as usize + value.len()))
+            .ok_or(Error::OutOfBounds)?;
+        data[..].copy_from_slice(value);
         Ok(())
     }
 
-    fn grow(&self, pages: u32) -> Result<u32, Error> {
+    fn grow(&self, store: &mut Self::Store, pages: u32) -> Result<u32, Error> {
+        let pages = Pages::new(pages).ok_or(Error::MemoryGrow)?;
         self.memref
-            .grow(Pages(pages as usize))
-            .map(|prev| (prev.0 as u32))
+            .grow(store, pages)
+            .map(Into::into)
             .map_err(|_| Error::MemoryGrow)
     }
 
-    fn size(&self) -> u32 {
-        self.memref.current_size().0 as u32
+    fn size(&self, store: &Self::Store) -> u32 {
+        self.memref.current_pages(store).into()
     }
 
-    unsafe fn get_buff(&self) -> u64 {
-        self.memref.direct_access_mut().as_mut().as_mut_ptr() as usize as u64
-    }
-}
-
-struct HostFuncIndex(usize);
-
-struct DefinedHostFunctions<T> {
-    funcs: Vec<HostFuncType<T>>,
-}
-
-impl<T> Clone for DefinedHostFunctions<T> {
-    fn clone(&self) -> DefinedHostFunctions<T> {
-        DefinedHostFunctions {
-            funcs: self.funcs.clone(),
-        }
-    }
-}
-
-impl<T> DefinedHostFunctions<T> {
-    fn new() -> DefinedHostFunctions<T> {
-        DefinedHostFunctions { funcs: Vec::new() }
-    }
-
-    fn define(&mut self, f: HostFuncType<T>) -> HostFuncIndex {
-        let idx = self.funcs.len();
-        self.funcs.push(f);
-        HostFuncIndex(idx)
-    }
-}
-
-#[derive(Debug)]
-struct DummyHostError;
-
-impl fmt::Display for DummyHostError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "DummyHostError")
-    }
-}
-
-impl wasmi::HostError for DummyHostError {}
-
-struct GuestExternals<'a, T: 'a> {
-    state: &'a mut T,
-    defined_host_functions: &'a DefinedHostFunctions<T>,
-}
-
-impl<'a, T> Externals for GuestExternals<'a, T> {
-    fn invoke_index(
-        &mut self,
-        index: usize,
-        args: RuntimeArgs,
-    ) -> Result<Option<RuntimeValue>, Trap> {
-        let args = args
-            .as_ref()
-            .iter()
-            .cloned()
-            .map(to_interface)
-            .collect::<Vec<_>>();
-
-        let result = (self.defined_host_functions.funcs[index])(self.state, &args);
-        match result {
-            Ok(value) => Ok(match value {
-                ReturnValue::Value(v) => Some(to_wasmi(v)),
-                ReturnValue::Unit => None,
-            }),
-            Err(HostError) => Err(Trap::host(DummyHostError)),
-        }
+    unsafe fn get_buff(&self, store: &mut Self::Store) -> u64 {
+        self.memref.data_mut(store).as_mut_ptr() as usize as u64
     }
 }
 
 enum ExternVal {
-    HostFunc(HostFuncIndex),
-    Memory(Memory),
+    HostFunc(Func),
+    Memory(wasmi::Memory),
 }
 
 /// A builder for the environment of the sandboxed WASM module.
 pub struct EnvironmentDefinitionBuilder<T> {
-    map: BTreeMap<(Vec<u8>, Vec<u8>), ExternVal>,
-    defined_host_functions: DefinedHostFunctions<T>,
+    externs: BTreeMap<(String, String), ExternVal>,
+    engine: Engine,
+    store: wasmi::Store<T>,
 }
 
-impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBuilder<T> {
-    fn new() -> EnvironmentDefinitionBuilder<T> {
-        EnvironmentDefinitionBuilder {
-            map: BTreeMap::new(),
-            defined_host_functions: DefinedHostFunctions::new(),
+impl<'a, T> super::SandboxEnvironmentBuilder<T, Memory<'a, T>> for EnvironmentDefinitionBuilder<T> {
+    fn new(state: T) -> Self {
+        let engine = Engine::default();
+        let store = wasmi::Store::new(&engine, state);
+        Self {
+            externs: BTreeMap::new(),
+            engine,
+            store,
         }
     }
 
-    fn add_host_func<N1, N2>(&mut self, module: N1, field: N2, f: HostFuncType<T>)
+    fn create_memory(
+        &mut self,
+        initial: u32,
+        maximum: Option<u32>,
+    ) -> Result<Memory<'a, T>, Error> {
+        let ty = MemoryType::new(initial, maximum).map_err(|_| Error::Module)?;
+        let memref = wasmi::Memory::new(&mut self.store, ty).map_err(|_| Error::Module)?;
+        Ok(Memory {
+            memref,
+            _store: PhantomData,
+        })
+    }
+
+    fn add_host_func<N1, N2, F, Args, R>(&mut self, module: N1, field: N2, f: F)
     where
-        N1: Into<Vec<u8>>,
-        N2: Into<Vec<u8>>,
+        N1: Into<String>,
+        N2: Into<String>,
+        F: SandboxFunction<Args, R, T> + Send + Sync + 'static,
+        Args: SandboxFunctionArgs,
+        R: SandboxFunctionResult,
     {
-        let idx = self.defined_host_functions.define(f);
-        self.map
-            .insert((module.into(), field.into()), ExternVal::HostFunc(idx));
+        let params = Args::params().iter().copied().map(to_wasmi_type);
+        let result = R::result().map(to_wasmi_type);
+        let ty = FuncType::new(params, result);
+        let func = Func::new(&mut self.store, ty, move |caller, args, results| {
+            let args: Vec<Value> = args.iter().cloned().map(to_interface).collect();
+            let value = f
+                .call(&mut Store(caller), &args)
+                .map(R::into_return_value)
+                .map_err(|HostError| Trap::new("Error calling host function"))?;
+            match value {
+                ReturnValue::Unit => Ok(()),
+                ReturnValue::Value(value) => {
+                    results[0] = to_wasmi(value);
+                    Ok(())
+                }
+            }
+        });
+
+        self.externs
+            .insert((module.into(), field.into()), ExternVal::HostFunc(func));
     }
 
-    fn add_memory<N1, N2>(&mut self, module: N1, field: N2, mem: Memory)
+    fn add_memory<N1, N2>(&mut self, module: N1, field: N2, mem: Memory<'a, T>)
     where
-        N1: Into<Vec<u8>>,
-        N2: Into<Vec<u8>>,
+        N1: Into<String>,
+        N2: Into<String>,
     {
-        self.map
-            .insert((module.into(), field.into()), ExternVal::Memory(mem));
-    }
-}
-
-impl<T> ImportResolver for EnvironmentDefinitionBuilder<T> {
-    fn resolve_func(
-        &self,
-        module_name: &str,
-        field_name: &str,
-        signature: &Signature,
-    ) -> Result<FuncRef, wasmi::Error> {
-        let key = (
-            module_name.as_bytes().to_owned(),
-            field_name.as_bytes().to_owned(),
-        );
-        let externval = self.map.get(&key).ok_or_else(|| {
-            log::debug!(
-                target: TARGET,
-                "Export {}:{} not found",
-                module_name,
-                field_name
-            );
-            wasmi::Error::Instantiation(String::new())
-        })?;
-        let host_func_idx = match *externval {
-            ExternVal::HostFunc(ref idx) => idx,
-            _ => {
-                log::debug!(
-                    target: TARGET,
-                    "Export {}:{} is not a host func",
-                    module_name,
-                    field_name,
-                );
-                return Err(wasmi::Error::Instantiation(String::new()));
-            }
-        };
-        Ok(FuncInstance::alloc_host(signature.clone(), host_func_idx.0))
-    }
-
-    fn resolve_global(
-        &self,
-        _module_name: &str,
-        _field_name: &str,
-        _global_type: &GlobalDescriptor,
-    ) -> Result<GlobalRef, wasmi::Error> {
-        log::debug!(target: TARGET, "Importing globals is not supported yet");
-        Err(wasmi::Error::Instantiation(String::new()))
-    }
-
-    fn resolve_memory(
-        &self,
-        module_name: &str,
-        field_name: &str,
-        _memory_type: &MemoryDescriptor,
-    ) -> Result<MemoryRef, wasmi::Error> {
-        let key = (
-            module_name.as_bytes().to_owned(),
-            field_name.as_bytes().to_owned(),
-        );
-        let externval = self.map.get(&key).ok_or_else(|| {
-            log::debug!(
-                target: TARGET,
-                "Export {}:{} not found",
-                module_name,
-                field_name
-            );
-            wasmi::Error::Instantiation(String::new())
-        })?;
-        let memory = match *externval {
-            ExternVal::Memory(ref m) => m,
-            _ => {
-                log::debug!(
-                    target: TARGET,
-                    "Export {}:{} is not a memory",
-                    module_name,
-                    field_name,
-                );
-                return Err(wasmi::Error::Instantiation(String::new()));
-            }
-        };
-        Ok(memory.memref.clone())
-    }
-
-    fn resolve_table(
-        &self,
-        _module_name: &str,
-        _field_name: &str,
-        _table_type: &TableDescriptor,
-    ) -> Result<TableRef, wasmi::Error> {
-        log::debug!("Importing tables is not supported yet");
-        Err(wasmi::Error::Instantiation(String::new()))
+        self.externs
+            .insert((module.into(), field.into()), ExternVal::Memory(mem.memref));
     }
 }
 
 /// Sandboxed instance of a WASM module.
-pub struct Instance<T> {
-    instance: ModuleRef,
-    defined_host_functions: DefinedHostFunctions<T>,
-    _marker: PhantomData<T>,
+pub struct Instance<'a, T> {
+    store: wasmi::Store<T>,
+    instance: wasmi::Instance,
+    _caller: PhantomData<&'a ()>,
 }
 
 /// Unit-type as InstanceGlobals for wasmi executor.
-#[derive(Clone, Default)]
-pub struct InstanceGlobals;
+pub struct InstanceGlobals(wasmi::Globals);
 
 impl super::InstanceGlobals for InstanceGlobals {
     fn get_global_val(&self, _name: &str) -> Option<Value> {
@@ -296,56 +212,70 @@ impl super::InstanceGlobals for InstanceGlobals {
     }
 }
 
-impl<T> super::SandboxInstance<T> for Instance<T> {
-    type Memory = Memory;
+impl<'a, T: 'a> super::SandboxInstance for Instance<'a, T> {
+    type State = T;
+    type Store = Store<'a, T>;
+    type Memory = Memory<'a, T>;
     type EnvironmentBuilder = EnvironmentDefinitionBuilder<T>;
     type InstanceGlobals = InstanceGlobals;
 
-    fn new(
-        code: &[u8],
-        env_def_builder: &EnvironmentDefinitionBuilder<T>,
-        state: &mut T,
-    ) -> Result<Instance<T>, Error> {
-        let module = Module::from_buffer(code).map_err(|_| Error::Module)?;
-        let not_started_instance =
-            ModuleInstance::new(&module, env_def_builder).map_err(|_| Error::Module)?;
+    fn new(code: &[u8], env_def_builder: EnvironmentDefinitionBuilder<T>) -> Result<Self, Error> {
+        let EnvironmentDefinitionBuilder {
+            externs,
+            engine,
+            mut store,
+        } = env_def_builder;
 
-        let defined_host_functions = env_def_builder.defined_host_functions.clone();
-        let instance = {
-            let mut externals = GuestExternals {
-                state,
-                defined_host_functions: &defined_host_functions,
+        let module = Module::new(&engine, code).map_err(|_| Error::Module)?;
+
+        let mut linker = Linker::new(&engine);
+        for ((module, name), item) in externs {
+            let item = match item {
+                ExternVal::HostFunc(func) => wasmi::Extern::Func(func),
+                ExternVal::Memory(mem) => wasmi::Extern::Memory(mem),
             };
-            not_started_instance
-                .run_start(&mut externals)
-                .map_err(|_| Error::Execution)?
-        };
+            linker
+                .define(&module, &name, item)
+                .map_err(|_| Error::Module)?;
+        }
+
+        let instance_pre = linker
+            .instantiate(&mut store, &module)
+            .map_err(|_| Error::Module)?;
+        let instance = instance_pre.start(&mut store).map_err(|_| Error::Module)?;
 
         Ok(Instance {
+            store,
             instance,
-            defined_host_functions,
-            _marker: PhantomData::<T>,
+            _caller: PhantomData,
         })
     }
 
-    fn invoke(&mut self, name: &str, args: &[Value], state: &mut T) -> Result<ReturnValue, Error> {
+    fn invoke(&mut self, name: &str, args: &[Value]) -> Result<ReturnValue, Error> {
         let args = args.iter().cloned().map(to_wasmi).collect::<Vec<_>>();
 
-        let mut externals = GuestExternals {
-            state,
-            defined_host_functions: &self.defined_host_functions,
-        };
-        let result = self.instance.invoke_export(name, &args, &mut externals);
+        let func = self
+            .instance
+            .get_func(&self.store, name)
+            .ok_or(Error::Execution)?;
 
-        match result {
-            Ok(None) => Ok(ReturnValue::Unit),
-            Ok(Some(val)) => Ok(ReturnValue::Value(to_interface(val))),
-            Err(_err) => Err(Error::Execution),
+        let results = func.ty(&self.store).results().len();
+        let mut results = vec![RuntimeValue::I32(0xBAAAAAD); results];
+        func.call(&mut self.store, &args, &mut results)
+            .map_err(|_| Error::Execution)?;
+
+        match results.as_slice() {
+            [] => Ok(ReturnValue::Unit),
+            [val] => Ok(ReturnValue::Value(to_interface(val.clone()))),
+            _ => Err(Error::Execution),
         }
     }
 
     fn get_global_val(&self, name: &str) -> Option<Value> {
-        let global = self.instance.export_by_name(name)?.as_global()?.get();
+        let global = self
+            .instance
+            .get_global(&self.store, name)?
+            .get(&self.store);
 
         Some(to_interface(global))
     }
@@ -369,6 +299,15 @@ fn to_wasmi(value: Value) -> RuntimeValue {
     }
 }
 
+fn to_wasmi_type(kind: ValueType) -> RuntimeValueType {
+    match kind {
+        ValueType::I32 => RuntimeValueType::I32,
+        ValueType::I64 => RuntimeValueType::I64,
+        ValueType::F32 => RuntimeValueType::F32,
+        ValueType::F64 => RuntimeValueType::F64,
+    }
+}
+
 /// Convert the wasmi value type to the substrate value type.
 fn to_interface(value: RuntimeValue) -> Value {
     match value {
@@ -376,58 +315,51 @@ fn to_interface(value: RuntimeValue) -> Value {
         RuntimeValue::I64(val) => Value::I64(val),
         RuntimeValue::F32(val) => Value::F32(val.into()),
         RuntimeValue::F64(val) => Value::F64(val.into()),
+        RuntimeValue::FuncRef(_) | RuntimeValue::ExternRef(_) => todo!(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{EnvironmentDefinitionBuilder, Instance};
-    use crate::{Error, HostError, ReturnValue, SandboxEnvironmentBuilder, SandboxInstance, Value};
-    use assert_matches::assert_matches;
+    use crate::{
+        Error, HostError, ReturnValue, SandboxEnvironmentBuilder, SandboxInstance, SandboxStore,
+        Value,
+    };
 
-    fn execute_sandboxed(code: &[u8], args: &[Value]) -> Result<ReturnValue, HostError> {
+    fn execute_sandboxed(code: &[u8], args: &[Value]) -> Result<ReturnValue, Error> {
         struct State {
             counter: u32,
         }
 
-        fn env_assert(_e: &mut State, args: &[Value]) -> Result<ReturnValue, HostError> {
-            if args.len() != 1 {
-                return Err(HostError);
-            }
-            let condition = args[0].as_i32().ok_or(HostError)?;
+        fn env_assert(
+            _store: &mut dyn SandboxStore<State>,
+            condition: i32,
+        ) -> Result<(), HostError> {
             if condition != 0 {
-                Ok(ReturnValue::Unit)
+                Ok(())
             } else {
                 Err(HostError)
             }
         }
-        fn env_inc_counter(e: &mut State, args: &[Value]) -> Result<ReturnValue, HostError> {
-            if args.len() != 1 {
-                return Err(HostError);
-            }
-            let inc_by = args[0].as_i32().ok_or(HostError)?;
-            e.counter += inc_by as u32;
-            Ok(ReturnValue::Value(Value::I32(e.counter as i32)))
-        }
-        /// Function that takes one argument of any type and returns that value.
-        fn env_polymorphic_id(_e: &mut State, args: &[Value]) -> Result<ReturnValue, HostError> {
-            if args.len() != 1 {
-                return Err(HostError);
-            }
-            Ok(ReturnValue::Value(args[0]))
+
+        fn env_inc_counter(
+            store: &mut dyn SandboxStore<State>,
+            inc_by: i32,
+        ) -> Result<u32, HostError> {
+            let data = store.data_mut();
+            data.counter += inc_by as u32;
+            Ok(data.counter)
         }
 
-        let mut state = State { counter: 0 };
+        let state = State { counter: 0 };
 
-        let mut env_builder = EnvironmentDefinitionBuilder::new();
+        let mut env_builder = EnvironmentDefinitionBuilder::new(state);
         env_builder.add_host_func("env", "assert", env_assert);
         env_builder.add_host_func("env", "inc_counter", env_inc_counter);
-        env_builder.add_host_func("env", "polymorphic_id", env_polymorphic_id);
 
-        let mut instance = Instance::new(code, &env_builder, &mut state)?;
-        let result = instance.invoke("call", args, &mut state);
-
-        result.map_err(|_| HostError)
+        let mut instance = Instance::new(code, env_builder)?;
+        instance.invoke("call", args)
     }
 
     #[test]
@@ -486,72 +418,23 @@ mod tests {
     }
 
     #[test]
-    fn signatures_dont_matter() {
+    fn inc_counter() {
         let code = wat::parse_str(
             r#"
-		(module
-			(import "env" "polymorphic_id" (func $id_i32 (param i32) (result i32)))
-			(import "env" "polymorphic_id" (func $id_i64 (param i64) (result i64)))
-			(import "env" "assert" (func $assert (param i32)))
-
-			(func (export "call")
-				;; assert that we can actually call the "same" function with different
-				;; signatures.
-				(call $assert
-					(i32.eq
-						(call $id_i32
-							(i32.const 0x012345678)
-						)
-						(i32.const 0x012345678)
-					)
-				)
-				(call $assert
-					(i64.eq
-						(call $id_i64
-							(i64.const 0x0123456789abcdef)
-						)
-						(i64.const 0x0123456789abcdef)
-					)
-				)
-			)
-		)
-		"#,
+        (module
+            (import "env" "assert" (func $assert (param i32)))
+            (import "env" "inc_counter" (func $inc_counter (param i32) (result i32)))
+        
+            (func (export "call")
+                i32.const 15
+                call $inc_counter
+                call $assert
+            )
+        )
+        "#,
         )
         .unwrap();
 
-        let return_val = execute_sandboxed(&code, &[]).unwrap();
-        assert_eq!(return_val, ReturnValue::Unit);
-    }
-
-    #[test]
-    fn cant_return_unmatching_type() {
-        fn env_returns_i32(_e: &mut (), _args: &[Value]) -> Result<ReturnValue, HostError> {
-            Ok(ReturnValue::Value(Value::I32(42)))
-        }
-
-        let mut env_builder = EnvironmentDefinitionBuilder::new();
-        env_builder.add_host_func("env", "returns_i32", env_returns_i32);
-
-        let code = wat::parse_str(
-            r#"
-		(module
-			;; It's actually returns i32, but imported as if it returned i64
-			(import "env" "returns_i32" (func $returns_i32 (result i64)))
-
-			(func (export "call")
-				(drop
-					(call $returns_i32)
-				)
-			)
-		)
-		"#,
-        )
-        .unwrap();
-
-        // It succeeds since we are able to import functions with types we want.
-        let mut instance = Instance::new(&code, &env_builder, &mut ()).unwrap();
-
-        // But this fails since we imported a function that returns i32 as if it returned i64.
-        assert_matches!(instance.invoke("call", &[], &mut ()), Err(Error::Execution));
+        execute_sandboxed(&code, &[]).unwrap();
     }
 }

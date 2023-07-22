@@ -50,7 +50,7 @@ use sp_core::RuntimeDebug;
 use sp_std::prelude::*;
 
 use sp_wasm_interface::HostPointer;
-pub use sp_wasm_interface::{ReturnValue, Value};
+pub use sp_wasm_interface::{ReturnValue, Value, ValueType};
 
 #[cfg(not(all(feature = "host-sandbox", not(feature = "std"))))]
 pub use self::embedded_executor as default_executor;
@@ -91,12 +91,159 @@ impl From<Error> for HostError {
 /// [`EnvironmentDefinitionBuilder`]: struct.EnvironmentDefinitionBuilder.html
 pub type HostFuncType<T> = fn(&mut T, &[Value]) -> Result<ReturnValue, HostError>;
 
+pub trait SandboxStore<T> {
+    fn data_mut(&mut self) -> &mut T;
+}
+
 /// Reference to a sandboxed linear memory, that
 /// will be used by the guest module.
 ///
 /// The memory can't be directly accessed by supervisor, but only
 /// through designated functions [`get`](SandboxMemory::get) and [`set`](SandboxMemory::set).
-pub trait SandboxMemory: Sized + Clone {
+pub trait SandboxMemory<T>: Sized + Clone {
+    type Store: SandboxStore<T>;
+
+    /// Read a memory area at the address `ptr` with the size of the provided slice `buf`.
+    ///
+    /// Returns `Err` if the range is out-of-bounds.
+    fn get(&self, store: &Self::Store, ptr: u32, buf: &mut [u8]) -> Result<(), Error>;
+
+    /// Write a memory area at the address `ptr` with contents of the provided slice `buf`.
+    ///
+    /// Returns `Err` if the range is out-of-bounds.
+    fn set(&self, store: &mut Self::Store, ptr: u32, value: &[u8]) -> Result<(), Error>;
+
+    /// Grow memory with provided number of pages.
+    ///
+    /// Returns `Err` if attempted to allocate more memory than permitted by the limit.
+    fn grow(&self, store: &mut Self::Store, pages: u32) -> Result<u32, Error>;
+
+    /// Returns current memory size.
+    ///
+    /// Maximum memory size cannot exceed 65536 pages or 4GiB.
+    fn size(&self, store: &Self::Store) -> u32;
+
+    /// Returns pointer to the begin of wasm mem buffer
+    /// # Safety
+    /// Pointer is intended to use by `mprotect` function.
+    unsafe fn get_buff(&self, store: &mut Self::Store) -> HostPointer;
+}
+
+pub trait SandboxFunctionArg: Sized {
+    const VALUE_TYPE: ValueType;
+
+    fn from_value(value: Value) -> Result<Self, HostError>;
+}
+
+impl SandboxFunctionArg for i32 {
+    const VALUE_TYPE: ValueType = ValueType::I32;
+
+    fn from_value(value: Value) -> Result<Self, HostError> {
+        // TODO: print error
+        value.as_i32().ok_or(HostError)
+    }
+}
+
+impl SandboxFunctionArg for u32 {
+    const VALUE_TYPE: ValueType = ValueType::I32;
+
+    fn from_value(value: Value) -> Result<Self, HostError> {
+        value.as_i32().map(|x| x as u32).ok_or(HostError)
+    }
+}
+
+pub trait SandboxFunctionArgs {
+    fn params() -> &'static [ValueType];
+}
+
+impl SandboxFunctionArgs for () {
+    fn params() -> &'static [ValueType] {
+        &[]
+    }
+}
+
+impl<T> SandboxFunctionArgs for (T,)
+where
+    T: SandboxFunctionArg,
+{
+    fn params() -> &'static [ValueType] {
+        &[T::VALUE_TYPE]
+    }
+}
+
+pub trait SandboxFunctionResult {
+    fn result() -> Option<ValueType>;
+
+    fn into_return_value(self) -> ReturnValue;
+}
+
+impl SandboxFunctionResult for () {
+    fn result() -> Option<ValueType> {
+        None
+    }
+
+    fn into_return_value(self) -> ReturnValue {
+        ReturnValue::Unit
+    }
+}
+
+impl SandboxFunctionResult for i32 {
+    fn result() -> Option<ValueType> {
+        Some(ValueType::I32)
+    }
+
+    fn into_return_value(self) -> ReturnValue {
+        ReturnValue::Value(Value::I32(self))
+    }
+}
+
+impl SandboxFunctionResult for u32 {
+    fn result() -> Option<ValueType> {
+        Some(ValueType::I32)
+    }
+
+    fn into_return_value(self) -> ReturnValue {
+        ReturnValue::Value(Value::I32(self as i32))
+    }
+}
+
+pub trait SandboxFunction<Args, R, Data> {
+    fn call(&self, store: &mut dyn SandboxStore<Data>, args: &[Value]) -> Result<R, HostError>;
+}
+
+impl<F, R, D> SandboxFunction<(), R, D> for F
+where
+    F: Fn(&mut dyn SandboxStore<D>) -> Result<R, HostError>,
+    R: SandboxFunctionResult,
+{
+    fn call(&self, store: &mut dyn SandboxStore<D>, args: &[Value]) -> Result<R, HostError> {
+        let _args: [Value; 0] = args.try_into().unwrap(); // TODO
+        (self)(store)
+    }
+}
+
+impl<A, F, R, D> SandboxFunction<(A,), R, D> for F
+where
+    F: Fn(&mut dyn SandboxStore<D>, A) -> Result<R, HostError>,
+    A: SandboxFunctionArg,
+    R: SandboxFunctionResult,
+{
+    fn call(&self, store: &mut dyn SandboxStore<D>, args: &[Value]) -> Result<R, HostError> {
+        let args: [Value; 1] = args.try_into().unwrap(); // TODO
+        let [a] = args;
+        let a = A::from_value(a)?;
+        (self)(store, a)
+    }
+}
+
+/// Struct that can be used for defining an environment for a sandboxed module.
+///
+/// The sandboxed module can access only the entities which were defined and passed
+/// to the module at the instantiation time.
+pub trait SandboxEnvironmentBuilder<State, Memory>: Sized {
+    /// Construct a new `EnvironmentDefinitionBuilder`.
+    fn new(state: State) -> Self;
+
     /// Construct a new linear memory instance.
     ///
     /// The memory allocated with initial number of pages specified by `initial`.
@@ -107,41 +254,7 @@ pub trait SandboxMemory: Sized + Clone {
     /// `maximum`. If not specified, this memory instance would be able to allocate up to 4GiB.
     ///
     /// Allocated memory is always zeroed.
-    fn new(initial: u32, maximum: Option<u32>) -> Result<Self, Error>;
-
-    /// Read a memory area at the address `ptr` with the size of the provided slice `buf`.
-    ///
-    /// Returns `Err` if the range is out-of-bounds.
-    fn get(&self, ptr: u32, buf: &mut [u8]) -> Result<(), Error>;
-
-    /// Write a memory area at the address `ptr` with contents of the provided slice `buf`.
-    ///
-    /// Returns `Err` if the range is out-of-bounds.
-    fn set(&self, ptr: u32, value: &[u8]) -> Result<(), Error>;
-
-    /// Grow memory with provided number of pages.
-    ///
-    /// Returns `Err` if attempted to allocate more memory than permitted by the limit.
-    fn grow(&self, pages: u32) -> Result<u32, Error>;
-
-    /// Returns current memory size.
-    ///
-    /// Maximum memory size cannot exceed 65536 pages or 4GiB.
-    fn size(&self) -> u32;
-
-    /// Returns pointer to the begin of wasm mem buffer
-    /// # Safety
-    /// Pointer is intended to use by `mprotect` function.
-    unsafe fn get_buff(&self) -> HostPointer;
-}
-
-/// Struct that can be used for defining an environment for a sandboxed module.
-///
-/// The sandboxed module can access only the entities which were defined and passed
-/// to the module at the instantiation time.
-pub trait SandboxEnvironmentBuilder<State, Memory>: Sized {
-    /// Construct a new `EnvironmentDefinitionBuilder`.
-    fn new() -> Self;
+    fn create_memory(&mut self, initial: u32, maximum: Option<u32>) -> Result<Memory, Error>;
 
     /// Register a host function in this environment definition.
     ///
@@ -149,27 +262,34 @@ pub trait SandboxEnvironmentBuilder<State, Memory>: Sized {
     /// can import function passed here with any signature it wants. It can even import
     /// the same function (i.e. with same `module` and `field`) several times. It's up to
     /// the user code to check or constrain the types of signatures.
-    fn add_host_func<N1, N2>(&mut self, module: N1, field: N2, f: HostFuncType<State>)
+    fn add_host_func<N1, N2, F, Args, R>(&mut self, module: N1, field: N2, f: F)
     where
-        N1: Into<Vec<u8>>,
-        N2: Into<Vec<u8>>;
+        N1: Into<String>,
+        N2: Into<String>,
+        F: SandboxFunction<Args, R, State> + Send + Sync + 'static,
+        Args: SandboxFunctionArgs,
+        R: SandboxFunctionResult;
 
     /// Register a memory in this environment definition.
     fn add_memory<N1, N2>(&mut self, module: N1, field: N2, mem: Memory)
     where
-        N1: Into<Vec<u8>>,
-        N2: Into<Vec<u8>>;
+        N1: Into<String>,
+        N2: Into<String>;
 }
 
 /// Sandboxed instance of a wasm module.
 ///
 /// This instance can be used for invoking exported functions.
-pub trait SandboxInstance<State>: Sized {
+pub trait SandboxInstance: Sized {
+    type State;
+
+    type Store: SandboxStore<Self::State>;
+
     /// The memory type used for this sandbox.
-    type Memory: SandboxMemory;
+    type Memory: SandboxMemory<Self::State>;
 
     /// The environment builder used to construct this sandbox.
-    type EnvironmentBuilder: SandboxEnvironmentBuilder<State, Self::Memory>;
+    type EnvironmentBuilder: SandboxEnvironmentBuilder<Self::State, Self::Memory>;
 
     /// The globals type used for this sandbox to change globals.
     type InstanceGlobals: InstanceGlobals;
@@ -182,11 +302,7 @@ pub trait SandboxInstance<State>: Sized {
     /// will be returned.
     ///
     /// [`EnvironmentDefinitionBuilder`]: struct.EnvironmentDefinitionBuilder.html
-    fn new(
-        code: &[u8],
-        env_def_builder: &Self::EnvironmentBuilder,
-        state: &mut State,
-    ) -> Result<Self, Error>;
+    fn new(code: &[u8], env_def_builder: Self::EnvironmentBuilder) -> Result<Self, Error>;
 
     /// Invoke an exported function with the given name.
     ///
@@ -199,12 +315,7 @@ pub trait SandboxInstance<State>: Sized {
     /// - If types of the arguments passed to the function doesn't match function signature then
     ///   trap occurs (as if the exported function was called via call_indirect),
     /// - Trap occurred at the execution time.
-    fn invoke(
-        &mut self,
-        name: &str,
-        args: &[Value],
-        state: &mut State,
-    ) -> Result<ReturnValue, Error>;
+    fn invoke(&mut self, name: &str, args: &[Value]) -> Result<ReturnValue, Error>;
 
     /// Get the value from a global with the given `name`.
     ///
@@ -231,7 +342,7 @@ pub enum GlobalsSetError {
 }
 
 /// This instance can be used for changing exported globals.
-pub trait InstanceGlobals: Sized + Clone {
+pub trait InstanceGlobals: Sized {
     /// Get the value from a global with the given `name`.
     ///
     /// Returns `Some(_)` if the global could be found.
