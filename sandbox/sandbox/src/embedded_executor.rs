@@ -183,7 +183,7 @@ pub struct Instance<T> {
 }
 
 /// Unit-type as InstanceGlobals for wasmi executor.
-pub struct InstanceGlobals(wasmi::Globals);
+pub struct InstanceGlobals(());
 
 impl super::InstanceGlobals for InstanceGlobals {
     fn get_global_val(&self, _name: &str) -> Option<Value> {
