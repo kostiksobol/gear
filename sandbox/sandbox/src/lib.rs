@@ -209,28 +209,30 @@ impl SandboxFunctionResult for u32 {
     }
 }
 
-pub trait SandboxFunction<Args, R, Data> {
-    fn call(&self, store: &mut dyn SandboxStore<Data>, args: &[Value]) -> Result<R, HostError>;
+pub trait SandboxFunction<Store, Args, R, Data> {
+    fn call(&self, store: Store, args: &[Value]) -> Result<R, HostError>;
 }
 
-impl<F, R, D> SandboxFunction<(), R, D> for F
+impl<S, F, R, D> SandboxFunction<S, (), R, D> for F
 where
-    F: Fn(&mut dyn SandboxStore<D>) -> Result<R, HostError>,
+    F: Fn(S) -> Result<R, HostError>,
+    S: SandboxStore<D>,
     R: SandboxFunctionResult,
 {
-    fn call(&self, store: &mut dyn SandboxStore<D>, args: &[Value]) -> Result<R, HostError> {
+    fn call(&self, store: S, args: &[Value]) -> Result<R, HostError> {
         let _args: [Value; 0] = args.try_into().unwrap(); // TODO
         (self)(store)
     }
 }
 
-impl<A, F, R, D> SandboxFunction<(A,), R, D> for F
+impl<S, A, F, R, D> SandboxFunction<S, (A,), R, D> for F
 where
-    F: Fn(&mut dyn SandboxStore<D>, A) -> Result<R, HostError>,
+    F: Fn(S, A) -> Result<R, HostError>,
+    S: SandboxStore<D>,
     A: SandboxFunctionArg,
     R: SandboxFunctionResult,
 {
-    fn call(&self, store: &mut dyn SandboxStore<D>, args: &[Value]) -> Result<R, HostError> {
+    fn call(&self, store: S, args: &[Value]) -> Result<R, HostError> {
         let args: [Value; 1] = args.try_into().unwrap(); // TODO
         let [a] = args;
         let a = A::from_value(a)?;
@@ -243,6 +245,10 @@ where
 /// The sandboxed module can access only the entities which were defined and passed
 /// to the module at the instantiation time.
 pub trait SandboxEnvironmentBuilder<State, Memory>: Sized {
+    type Caller<'a>: SandboxStore<State>
+    where
+        State: 'a;
+
     /// Construct a new `EnvironmentDefinitionBuilder`.
     fn new(state: State) -> Self;
 
@@ -268,7 +274,7 @@ pub trait SandboxEnvironmentBuilder<State, Memory>: Sized {
     where
         N1: Into<String>,
         N2: Into<String>,
-        F: SandboxFunction<Args, R, State> + Send + Sync + 'static,
+        F: for<'a> SandboxFunction<Self::Caller<'a>, Args, R, State> + Send + Sync + 'static,
         Args: SandboxFunctionArgs,
         R: SandboxFunctionResult;
 

@@ -37,7 +37,8 @@ use crate::{
     SandboxStore, Value, ValueType,
 };
 
-#[doc(hidden)]
+pub struct Store<T>(wasmi::Store<T>);
+
 pub struct Caller<'a, T>(wasmi::Caller<'a, T>);
 
 impl<T> SandboxStore<T> for Caller<'_, T> {
@@ -120,6 +121,8 @@ pub struct EnvironmentDefinitionBuilder<T> {
 }
 
 impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBuilder<T> {
+    type Caller<'a> = Caller<'a, T> where T: 'a;
+
     fn new(state: T) -> Self {
         let engine = Engine::default();
         let store = wasmi::Store::new(&engine, state);
@@ -140,7 +143,7 @@ impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBui
     where
         N1: Into<String>,
         N2: Into<String>,
-        F: SandboxFunction<Args, R, T> + Send + Sync + 'static,
+        F: for<'a> SandboxFunction<Caller<'a, T>, Args, R, T> + Send + Sync + 'static,
         Args: SandboxFunctionArgs,
         R: SandboxFunctionResult,
     {
@@ -150,7 +153,7 @@ impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBui
         let func = Func::new(&mut self.store, ty, move |caller, args, results| {
             let args: Vec<Value> = args.iter().cloned().map(to_interface).collect();
             let value = f
-                .call(&mut Caller(caller), &args)
+                .call(Caller(caller), &args)
                 .map(R::into_return_value)
                 .map_err(|HostError| Trap::new("Error calling host function"))?;
             match value {
@@ -301,8 +304,8 @@ fn to_interface(value: RuntimeValue) -> Value {
 mod tests {
     use super::{EnvironmentDefinitionBuilder, Instance};
     use crate::{
-        Error, HostError, ReturnValue, SandboxEnvironmentBuilder, SandboxInstance, SandboxStore,
-        Value,
+        default_executor::Caller, Error, HostError, ReturnValue, SandboxEnvironmentBuilder,
+        SandboxInstance, SandboxStore, Value,
     };
 
     fn execute_sandboxed(code: &[u8], args: &[Value]) -> Result<ReturnValue, Error> {
@@ -310,10 +313,7 @@ mod tests {
             counter: u32,
         }
 
-        fn env_assert(
-            _store: &mut dyn SandboxStore<State>,
-            condition: i32,
-        ) -> Result<(), HostError> {
+        fn env_assert(_caller: Caller<'_, State>, condition: i32) -> Result<(), HostError> {
             if condition != 0 {
                 Ok(())
             } else {
@@ -321,11 +321,8 @@ mod tests {
             }
         }
 
-        fn env_inc_counter(
-            store: &mut dyn SandboxStore<State>,
-            inc_by: i32,
-        ) -> Result<u32, HostError> {
-            let data = store.data_mut();
+        fn env_inc_counter(mut caller: Caller<'_, State>, inc_by: i32) -> Result<u32, HostError> {
+            let data = caller.data_mut();
             data.counter += inc_by as u32;
             Ok(data.counter)
         }
