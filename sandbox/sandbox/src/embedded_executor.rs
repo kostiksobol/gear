@@ -19,6 +19,7 @@
 //! An embedded WASM executor utilizing `wasmi`.
 
 use alloc::string::String;
+use std::marker::PhantomData;
 
 use sp_wasm_interface::HostPointer;
 use wasmi::{
@@ -39,7 +40,52 @@ use crate::{
 
 pub struct Store<T>(wasmi::Store<T>);
 
+impl<T> Store<T> {
+    pub fn new(data: T) -> Self {
+        let engine = Engine::default();
+        let store = wasmi::Store::new(&engine, data);
+        Self(store)
+    }
+
+    fn engine(&self) -> &Engine {
+        self.0.engine()
+    }
+}
+
+impl<T> SandboxStore<T> for Store<T> {
+    fn data_mut(&mut self) -> &mut T {
+        self.0.data_mut()
+    }
+}
+
+impl<T> AsContext for Store<T> {
+    type UserState = T;
+
+    fn as_context(&self) -> StoreContext<Self::UserState> {
+        self.0.as_context()
+    }
+}
+
+impl<T> AsContextMut for Store<T> {
+    fn as_context_mut(&mut self) -> StoreContextMut<Self::UserState> {
+        self.0.as_context_mut()
+    }
+}
+
 pub struct Caller<'a, T>(wasmi::Caller<'a, T>);
+
+impl<'a, T> Caller<'a, T> {
+    pub fn set_global_val(&mut self, name: &str, value: Value) -> Option<()> {
+        let global = self.0.get_export(name)?.into_global()?;
+        global.set(&mut self.0, to_wasmi(value)).ok()?;
+        Some(())
+    }
+
+    pub fn get_global_val(&mut self, name: &str) -> Option<Value> {
+        let value = self.0.get_export(name)?.into_global()?.get(&self.0);
+        Some(to_interface(value))
+    }
+}
 
 impl<T> SandboxStore<T> for Caller<'_, T> {
     fn data_mut(&mut self) -> &mut T {
@@ -67,11 +113,17 @@ pub struct Memory {
     memref: wasmi::Memory,
 }
 
-impl<T> super::SandboxMemory<T> for Memory {
-    type Store<'a> = Caller<'a, T>
-    where T: 'a;
+impl<T, S> super::SandboxMemory<T, S> for Memory
+where
+    S: SandboxStore<T> + AsContext<UserState = T> + AsContextMut<UserState = T>,
+{
+    fn new(store: &mut Store<T>, initial: u32, maximum: Option<u32>) -> Result<Memory, Error> {
+        let ty = MemoryType::new(initial, maximum).map_err(|_| Error::Module)?;
+        let memref = wasmi::Memory::new(store, ty).map_err(|_| Error::Module)?;
+        Ok(Memory { memref })
+    }
 
-    fn get(&self, store: &Self::Store<'_>, ptr: u32, buf: &mut [u8]) -> Result<(), Error> {
+    fn get(&self, store: &S, ptr: u32, buf: &mut [u8]) -> Result<(), Error> {
         let data = self
             .memref
             .data(store)
@@ -81,7 +133,7 @@ impl<T> super::SandboxMemory<T> for Memory {
         Ok(())
     }
 
-    fn set(&self, store: &mut Self::Store<'_>, ptr: u32, value: &[u8]) -> Result<(), Error> {
+    fn set(&self, store: &mut S, ptr: u32, value: &[u8]) -> Result<(), Error> {
         let data = self
             .memref
             .data_mut(store)
@@ -91,7 +143,7 @@ impl<T> super::SandboxMemory<T> for Memory {
         Ok(())
     }
 
-    fn grow(&self, store: &mut Self::Store<'_>, pages: u32) -> Result<u32, Error> {
+    fn grow(&self, store: &mut S, pages: u32) -> Result<u32, Error> {
         let pages = Pages::new(pages).ok_or(Error::MemoryGrow)?;
         self.memref
             .grow(store, pages)
@@ -99,11 +151,11 @@ impl<T> super::SandboxMemory<T> for Memory {
             .map_err(|_| Error::MemoryGrow)
     }
 
-    fn size(&self, store: &Self::Store<'_>) -> u32 {
+    fn size(&self, store: &S) -> u32 {
         self.memref.current_pages(store).into()
     }
 
-    unsafe fn get_buff(&self, store: &mut Self::Store<'_>) -> u64 {
+    unsafe fn get_buff(&self, store: &mut S) -> u64 {
         self.memref.data_mut(store).as_mut_ptr() as usize as u64
     }
 }
@@ -114,33 +166,26 @@ enum ExternVal {
 }
 
 /// A builder for the environment of the sandboxed WASM module.
-pub struct EnvironmentDefinitionBuilder<T> {
+pub struct EnvironmentDefinitionBuilder {
     externs: BTreeMap<(String, String), ExternVal>,
-    engine: Engine,
-    store: wasmi::Store<T>,
 }
 
-impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBuilder<T> {
+impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBuilder {
     type Caller<'a> = Caller<'a, T> where T: 'a;
 
-    fn new(state: T) -> Self {
-        let engine = Engine::default();
-        let store = wasmi::Store::new(&engine, state);
+    fn new() -> Self {
         Self {
             externs: BTreeMap::new(),
-            engine,
-            store,
         }
     }
 
-    fn create_memory(&mut self, initial: u32, maximum: Option<u32>) -> Result<Memory, Error> {
-        let ty = MemoryType::new(initial, maximum).map_err(|_| Error::Module)?;
-        let memref = wasmi::Memory::new(&mut self.store, ty).map_err(|_| Error::Module)?;
-        Ok(Memory { memref })
-    }
-
-    fn add_host_func<N1, N2, F, Args, R>(&mut self, module: N1, field: N2, f: F)
-    where
+    fn add_host_func<N1, N2, F, Args, R>(
+        &mut self,
+        store: &mut Store<T>,
+        module: N1,
+        field: N2,
+        f: F,
+    ) where
         N1: Into<String>,
         N2: Into<String>,
         F: for<'a> SandboxFunction<Caller<'a, T>, Args, R, T> + Send + Sync + 'static,
@@ -150,7 +195,7 @@ impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBui
         let params = Args::params().iter().copied().map(to_wasmi_type);
         let result = R::result().map(to_wasmi_type);
         let ty = FuncType::new(params, result);
-        let func = Func::new(&mut self.store, ty, move |caller, args, results| {
+        let func = Func::new(store, ty, move |caller, args, results| {
             let args: Vec<Value> = args.iter().cloned().map(to_interface).collect();
             let value = f
                 .call(Caller(caller), &args)
@@ -181,8 +226,8 @@ impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBui
 
 /// Sandboxed instance of a WASM module.
 pub struct Instance<T> {
-    store: wasmi::Store<T>,
     instance: wasmi::Instance,
+    _state: PhantomData<T>,
 }
 
 /// Unit-type as InstanceGlobals for wasmi executor.
@@ -200,20 +245,21 @@ impl super::InstanceGlobals for InstanceGlobals {
 
 impl<T> super::SandboxInstance for Instance<T> {
     type State = T;
+    type Store = Store<T>;
     type Memory = Memory;
-    type EnvironmentBuilder = EnvironmentDefinitionBuilder<T>;
+    type EnvironmentBuilder = EnvironmentDefinitionBuilder;
     type InstanceGlobals = InstanceGlobals;
 
-    fn new(code: &[u8], env_def_builder: EnvironmentDefinitionBuilder<T>) -> Result<Self, Error> {
-        let EnvironmentDefinitionBuilder {
-            externs,
-            engine,
-            mut store,
-        } = env_def_builder;
+    fn new(
+        mut store: &mut Store<T>,
+        code: &[u8],
+        env_def_builder: EnvironmentDefinitionBuilder,
+    ) -> Result<Self, Error> {
+        let EnvironmentDefinitionBuilder { externs } = env_def_builder;
 
-        let module = Module::new(&engine, code).map_err(|_| Error::Module)?;
+        let module = Module::new(store.engine(), code).map_err(|_| Error::Module)?;
 
-        let mut linker = Linker::new(&engine);
+        let mut linker = Linker::new(store.engine());
         for ((module, name), item) in externs {
             let item = match item {
                 ExternVal::HostFunc(func) => wasmi::Extern::Func(func),
@@ -229,20 +275,28 @@ impl<T> super::SandboxInstance for Instance<T> {
             .map_err(|_| Error::Module)?;
         let instance = instance_pre.start(&mut store).map_err(|_| Error::Module)?;
 
-        Ok(Instance { store, instance })
+        Ok(Instance {
+            instance,
+            _state: PhantomData,
+        })
     }
 
-    fn invoke(&mut self, name: &str, args: &[Value]) -> Result<ReturnValue, Error> {
+    fn invoke(
+        &mut self,
+        mut store: &mut Store<Self::State>,
+        name: &str,
+        args: &[Value],
+    ) -> Result<ReturnValue, Error> {
         let args = args.iter().cloned().map(to_wasmi).collect::<Vec<_>>();
 
         let func = self
             .instance
-            .get_func(&self.store, name)
+            .get_func(&store, name)
             .ok_or(Error::Execution)?;
 
-        let results = func.ty(&self.store).results().len();
+        let results = func.ty(&store).results().len();
         let mut results = vec![RuntimeValue::I32(0xBAAAAAD); results];
-        func.call(&mut self.store, &args, &mut results)
+        func.call(&mut store, &args, &mut results)
             .map_err(|_| Error::Execution)?;
 
         match results.as_slice() {
@@ -252,11 +306,8 @@ impl<T> super::SandboxInstance for Instance<T> {
         }
     }
 
-    fn get_global_val(&self, name: &str) -> Option<Value> {
-        let global = self
-            .instance
-            .get_global(&self.store, name)?
-            .get(&self.store);
+    fn get_global_val(&self, store: &Store<Self::State>, name: &str) -> Option<Value> {
+        let global = self.instance.get_global(store, name)?.get(store);
 
         Some(to_interface(global))
     }
@@ -304,8 +355,9 @@ fn to_interface(value: RuntimeValue) -> Value {
 mod tests {
     use super::{EnvironmentDefinitionBuilder, Instance};
     use crate::{
-        default_executor::Caller, Error, HostError, ReturnValue, SandboxEnvironmentBuilder,
-        SandboxInstance, SandboxStore, Value,
+        default_executor::{Caller, Store},
+        Error, HostError, ReturnValue, SandboxEnvironmentBuilder, SandboxInstance, SandboxStore,
+        Value,
     };
 
     fn execute_sandboxed(code: &[u8], args: &[Value]) -> Result<ReturnValue, Error> {
@@ -328,13 +380,15 @@ mod tests {
         }
 
         let state = State { counter: 0 };
+        let mut store = Store::new(state);
 
-        let mut env_builder = EnvironmentDefinitionBuilder::new(state);
-        env_builder.add_host_func("env", "assert", env_assert);
-        env_builder.add_host_func("env", "inc_counter", env_inc_counter);
+        let mut env_builder =
+            <EnvironmentDefinitionBuilder as SandboxEnvironmentBuilder<State, _>>::new();
+        env_builder.add_host_func(&mut store, "env", "assert", env_assert);
+        env_builder.add_host_func(&mut store, "env", "inc_counter", env_inc_counter);
 
-        let mut instance = Instance::new(code, env_builder)?;
-        instance.invoke("call", args)
+        let mut instance = Instance::new(&mut store, code, env_builder)?;
+        instance.invoke(&mut store, "call", args)
     }
 
     #[test]

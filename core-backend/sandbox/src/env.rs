@@ -19,11 +19,17 @@
 //! sp-sandbox environment for running a module.
 
 use crate::{
-    memory::MemoryWrap,
-    runtime::{self, Runtime},
+    runtime,
+    runtime::CallerWrap,
+    state::{Caller, HostState, State, Store},
+    MemoryWrap,
 };
 use alloc::{collections::BTreeSet, format};
-use core::{convert::Infallible, fmt::Display};
+use core::{
+    convert::Infallible,
+    fmt::Display,
+    marker::{PhantomData, Send, Sync},
+};
 use gear_backend_common::{
     funcs::FuncsHandler,
     lazy_pages::{GlobalsAccessConfig, GlobalsAccessMod},
@@ -39,8 +45,9 @@ use gear_core::{
 };
 use gear_sandbox::{
     default_executor::{EnvironmentDefinitionBuilder, Instance, Memory as DefaultExecutorMemory},
-    HostError, HostFuncType, InstanceGlobals, ReturnValue, SandboxEnvironmentBuilder,
-    SandboxInstance, SandboxMemory, Value,
+    HostError, InstanceGlobals, ReturnValue, SandboxEnvironmentBuilder, SandboxFunction,
+    SandboxFunctionArgs, SandboxFunctionResult, SandboxInstance, SandboxMemory, SandboxStore,
+    Value,
 };
 use gear_wasm_instrument::{
     syscalls::SysCallName::{self, *},
@@ -92,18 +99,27 @@ impl TryFrom<SandboxValue> for u64 {
     }
 }
 
-macro_rules! wrap_common_func_internal_ret{
-    ($func:path, $($arg_no:expr),*) => {
-        |ctx, args| -> Result<ReturnValue, HostError> {
-            $func(ctx, $(SandboxValue(args[$arg_no]).try_into()?,)*).map(|ret| Into::<SandboxValue>::into(ret).0.into())
+#[allow(unused_macros)]
+macro_rules! wrap_common_func_internal_ret {
+    ($func:path, $($arg_name:ident),*) => {
+        move |memory: DefaultExecutorMemory| {
+            move |caller: Caller<'_, Ext>, $($arg_name,)*| -> Result<_, HostError>
+            {
+                let mut ctx = CallerWrap::prepare(caller, memory.clone())?;
+                $func(&mut ctx, $($arg_name,)*)
+            }
         }
     }
 }
 
-macro_rules! wrap_common_func_internal_no_ret{
-    ($func:path, $($arg_no:expr),*) => {
-        |ctx, _args| -> Result<ReturnValue, HostError> {
-            $func(ctx, $(SandboxValue(_args[$arg_no]).try_into()?,)*).map(|_| ReturnValue::Unit)
+macro_rules! wrap_common_func_internal_no_ret {
+    ($func:path, $($arg_name:ident),*) => {
+        move |memory: DefaultExecutorMemory| {
+            move |caller: Caller<'_, Ext>, $($arg_name,)*| -> Result<(), HostError>
+            {
+                let mut ctx = CallerWrap::prepare(caller, memory.clone())?;
+                $func(&mut ctx, $($arg_name,)*)
+            }
         }
     }
 }
@@ -111,23 +127,24 @@ macro_rules! wrap_common_func_internal_no_ret{
 #[rustfmt::skip]
 macro_rules! wrap_common_func {
     ($func:path, () -> ()) =>   { wrap_common_func_internal_no_ret!($func,) };
-    ($func:path, (1) -> ()) =>  { wrap_common_func_internal_no_ret!($func, 0) };
-    ($func:path, (2) -> ()) =>  { wrap_common_func_internal_no_ret!($func, 0, 1) };
-    ($func:path, (3) -> ()) =>  { wrap_common_func_internal_no_ret!($func, 0, 1, 2) };
-    ($func:path, (4) -> ()) =>  { wrap_common_func_internal_no_ret!($func, 0, 1, 2, 3) };
-    ($func:path, (5) -> ()) =>  { wrap_common_func_internal_no_ret!($func, 0, 1, 2, 3, 4) };
-    ($func:path, (6) -> ()) =>  { wrap_common_func_internal_no_ret!($func, 0, 1, 2, 3, 4, 5) };
-    ($func:path, (7) -> ()) =>  { wrap_common_func_internal_no_ret!($func, 0, 1, 2, 3, 4, 5, 6) };
-    ($func:path, (8) -> ()) =>  { wrap_common_func_internal_no_ret!($func, 0, 1, 2, 3, 4, 5, 6, 7) };
+    ($func:path, (1) -> ()) =>  { wrap_common_func_internal_no_ret!($func, a) };
+    ($func:path, (2) -> ()) =>  { wrap_common_func_internal_no_ret!($func, a, b) };
+    ($func:path, (3) -> ()) =>  { wrap_common_func_internal_no_ret!($func, a, b, c) };
+    ($func:path, (4) -> ()) =>  { wrap_common_func_internal_no_ret!($func, a, b, c, d) };
+    ($func:path, (5) -> ()) =>  { wrap_common_func_internal_no_ret!($func, a, b, c, d, e) };
+    ($func:path, (6) -> ()) =>  { wrap_common_func_internal_no_ret!($func, a, b, c, d, e, f) };
+    ($func:path, (7) -> ()) =>  { wrap_common_func_internal_no_ret!($func, a, b, c, d, e, f, g) };
+    ($func:path, (8) -> ()) =>  { wrap_common_func_internal_no_ret!($func, a, b, c, d, e, f, g, h) };
 
-    ($func:path, () -> (1)) =>  { wrap_common_func_internal_ret!($func,) };
-    ($func:path, (1) -> (1)) => { wrap_common_func_internal_ret!($func, 0) };
-    ($func:path, (2) -> (1)) => { wrap_common_func_internal_ret!($func, 0, 1) };
-    ($func:path, (3) -> (1)) => { wrap_common_func_internal_ret!($func, 0, 1, 2) };
-    ($func:path, (4) -> (1)) => { wrap_common_func_internal_ret!($func, 0, 1, 2, 3) };
-    ($func:path, (5) -> (1)) => { wrap_common_func_internal_ret!($func, 0, 1, 2, 3, 4) };
-    ($func:path, (6) -> (1)) => { wrap_common_func_internal_ret!($func, 0, 1, 2, 3, 4, 5) };
-    ($func:path, (7) -> (1)) => { wrap_common_func_internal_ret!($func, 0, 1, 2, 3, 4, 5, 6) };
+    ($func:path, () -> (1)) =>  { wrap_common_func_internal_ret!($func,)};
+    ($func:path, (1) -> (1)) => { wrap_common_func_internal_ret!($func, a)};
+    ($func:path, (2) -> (1)) => { wrap_common_func_internal_ret!($func, a, b)};
+    ($func:path, (3) -> (1)) => { wrap_common_func_internal_ret!($func, a, b, c)};
+    ($func:path, (4) -> (1)) => { wrap_common_func_internal_ret!($func, a, b, c, d)};
+    ($func:path, (5) -> (1)) => { wrap_common_func_internal_ret!($func, a, b, c, d, e)};
+    ($func:path, (6) -> (1)) => { wrap_common_func_internal_ret!($func, a, b, c, d, e, f)};
+    ($func:path, (7) -> (1)) => { wrap_common_func_internal_ret!($func, a, b, c, d, e, f, g)};
+    ($func:path, (8) -> (1)) => { wrap_common_func_internal_ret!($func, a, b, c, d, e, f, g, h)};
 }
 
 #[derive(Debug, derive_more::Display)]
@@ -148,18 +165,21 @@ where
     Ext: BackendExternalities,
     EntryPoint: WasmEntryPoint,
 {
-    instance: Instance<Runtime<Ext>>,
-    runtime: Runtime<Ext>,
+    instance: Instance<HostState<Ext>>,
     entries: BTreeSet<DispatchKind>,
     entry_point: EntryPoint,
+    store: Store<Ext>,
+    memory: DefaultExecutorMemory,
 }
 
 // A helping wrapper for `EnvironmentDefinitionBuilder` and `forbidden_funcs`.
 // It makes adding functions to `EnvironmentDefinitionBuilder` shorter.
 struct EnvBuilder<Ext: BackendExternalities> {
-    env_def_builder: EnvironmentDefinitionBuilder<Runtime<Ext>>,
+    env_def_builder: EnvironmentDefinitionBuilder,
+    memory: DefaultExecutorMemory,
     forbidden_funcs: BTreeSet<SysCallName>,
     funcs_count: usize,
+    _ext: PhantomData<Ext>,
 }
 
 impl<Ext> EnvBuilder<Ext>
@@ -169,25 +189,33 @@ where
     RunFallibleError: From<Ext::FallibleError>,
     Ext::AllocError: BackendAllocSyscallError<ExtError = Ext::UnrecoverableError>,
 {
-    fn add_func(&mut self, name: SysCallName, f: HostFuncType<Runtime<Ext>>) {
+    fn add_func<F, Args, R>(&mut self, store: &mut Store<Ext>, name: SysCallName, f: F)
+    where
+        F: for<'a> SandboxFunction<Caller<'a, Ext>, Args, R, HostState<Ext>>
+            + Send
+            + Sync
+            + 'static,
+        Args: SandboxFunctionArgs,
+        R: SandboxFunctionResult,
+    {
         if self.forbidden_funcs.contains(&name) {
-            self.env_def_builder
-                .add_host_func("env", name.to_str(), FuncsHandler::forbidden);
+            let memory = self.memory.clone();
+            self.env_def_builder.add_host_func(
+                store,
+                "env",
+                name.to_str(),
+                wrap_common_func!(FuncsHandler::forbidden, () -> ())(memory),
+            );
         } else {
-            self.env_def_builder.add_host_func("env", name.to_str(), f);
+            self.env_def_builder
+                .add_host_func(store, "env", name.to_str(), f);
         }
 
         self.funcs_count += 1;
     }
-
-    fn add_memory(&mut self, memory: DefaultExecutorMemory) {
-        self.env_def_builder.add_memory("env", "memory", memory);
-    }
 }
 
-impl<Ext: BackendExternalities> From<EnvBuilder<Ext>>
-    for EnvironmentDefinitionBuilder<Runtime<Ext>>
-{
+impl<Ext: BackendExternalities> From<EnvBuilder<Ext>> for EnvironmentDefinitionBuilder {
     fn from(builder: EnvBuilder<Ext>) -> Self {
         builder.env_def_builder
     }
@@ -202,64 +230,65 @@ where
     EntryPoint: WasmEntryPoint,
 {
     #[rustfmt::skip]
-    fn bind_funcs(builder: &mut EnvBuilder<Ext>) {
-        builder.add_func(BlockHeight, wrap_common_func!(FuncsHandler::block_height, (1) -> ()));
-        builder.add_func(BlockTimestamp,wrap_common_func!(FuncsHandler::block_timestamp, (1) -> ()));
-        builder.add_func(CreateProgram, wrap_common_func!(FuncsHandler::create_program, (7) -> ()));
-        builder.add_func(CreateProgramWGas, wrap_common_func!(FuncsHandler::create_program_wgas, (8) -> ()));
-        builder.add_func(Debug, wrap_common_func!(FuncsHandler::debug, (2) -> ()));
-        builder.add_func(Panic, wrap_common_func!(FuncsHandler::panic, (2) -> ()));
-        builder.add_func(OomPanic, wrap_common_func!(FuncsHandler::oom_panic, () -> ()));
-        builder.add_func(Exit, wrap_common_func!(FuncsHandler::exit, (1) -> ()));
-        builder.add_func(ReplyCode, wrap_common_func!(FuncsHandler::reply_code, (1) -> ()));
-        builder.add_func(SignalCode, wrap_common_func!(FuncsHandler::signal_code, (1) -> ()));
-        builder.add_func(ReserveGas, wrap_common_func!(FuncsHandler::reserve_gas, (3) -> ()));
-        builder.add_func(ReplyDeposit, wrap_common_func!(FuncsHandler::reply_deposit, (3) -> ()));
-        builder.add_func(UnreserveGas, wrap_common_func!(FuncsHandler::unreserve_gas, (2) -> ()));
-        builder.add_func(GasAvailable, wrap_common_func!(FuncsHandler::gas_available, (1) -> ()));
-        builder.add_func(Leave, wrap_common_func!(FuncsHandler::leave, () -> ()));
-        builder.add_func(MessageId, wrap_common_func!(FuncsHandler::message_id, (1) -> ()));
-        builder.add_func(PayProgramRent, wrap_common_func!(FuncsHandler::pay_program_rent, (2) -> ()));
-        builder.add_func(ProgramId, wrap_common_func!(FuncsHandler::program_id, (1) -> ()));
-        builder.add_func(Random, wrap_common_func!(FuncsHandler::random, (2) -> ()));
-        builder.add_func(Read, wrap_common_func!(FuncsHandler::read, (4) -> ()));
-        builder.add_func(Reply, wrap_common_func!(FuncsHandler::reply, (4) -> ()));
-        builder.add_func(ReplyCommit, wrap_common_func!(FuncsHandler::reply_commit, (2) -> ()));
-        builder.add_func(ReplyCommitWGas, wrap_common_func!(FuncsHandler::reply_commit_wgas, (3) -> ()));
-        builder.add_func(ReplyPush, wrap_common_func!(FuncsHandler::reply_push, (3) -> ()));
-        builder.add_func(ReplyTo, wrap_common_func!(FuncsHandler::reply_to, (1) -> ()));
-        builder.add_func(SignalFrom, wrap_common_func!(FuncsHandler::signal_from, (1) -> ()));
-        builder.add_func(ReplyWGas, wrap_common_func!(FuncsHandler::reply_wgas, (5) -> ()));
-        builder.add_func(ReplyInput, wrap_common_func!(FuncsHandler::reply_input, (4) -> ()));
-        builder.add_func(ReplyPushInput, wrap_common_func!(FuncsHandler::reply_push_input, (3) -> ()));
-        builder.add_func(ReplyInputWGas, wrap_common_func!(FuncsHandler::reply_input_wgas, (5) -> ()));
-        builder.add_func(Send, wrap_common_func!(FuncsHandler::send, (5) -> ()));
-        builder.add_func(SendCommit, wrap_common_func!(FuncsHandler::send_commit, (4) -> ()));
-        builder.add_func(SendCommitWGas, wrap_common_func!(FuncsHandler::send_commit_wgas, (5) -> ()));
-        builder.add_func(SendInit, wrap_common_func!(FuncsHandler::send_init, (1) -> ()));
-        builder.add_func(SendPush, wrap_common_func!(FuncsHandler::send_push, (4) -> ()));
-        builder.add_func(SendWGas, wrap_common_func!(FuncsHandler::send_wgas, (6) -> ()));
-        builder.add_func(SendInput, wrap_common_func!(FuncsHandler::send_input, (5) -> ()));
-        builder.add_func(SendPushInput, wrap_common_func!(FuncsHandler::send_push_input, (4) -> ()));
-        builder.add_func(SendInputWGas, wrap_common_func!(FuncsHandler::send_input_wgas, (6) -> ()));
-        builder.add_func(Size, wrap_common_func!(FuncsHandler::size, (1) -> ()));
-        builder.add_func(Source, wrap_common_func!(FuncsHandler::source, (1) -> ()));
-        builder.add_func(Value, wrap_common_func!(FuncsHandler::value, (1) -> ()));
-        builder.add_func(ValueAvailable, wrap_common_func!(FuncsHandler::value_available, (1) -> ()));
-        builder.add_func(Wait, wrap_common_func!(FuncsHandler::wait, () -> ()));
-        builder.add_func(WaitFor, wrap_common_func!(FuncsHandler::wait_for, (1) -> ()));
-        builder.add_func(WaitUpTo, wrap_common_func!(FuncsHandler::wait_up_to, (1) -> ()));
-        builder.add_func(Wake, wrap_common_func!(FuncsHandler::wake, (3) -> ()));
-        builder.add_func(SystemReserveGas, wrap_common_func!(FuncsHandler::system_reserve_gas, (2) -> ()));
-        builder.add_func(ReservationReply, wrap_common_func!(FuncsHandler::reservation_reply, (4) -> ()));
-        builder.add_func(ReservationReplyCommit, wrap_common_func!(FuncsHandler::reservation_reply_commit, (2) -> ()));
-        builder.add_func(ReservationSend, wrap_common_func!(FuncsHandler::reservation_send, (5) -> ()));
-        builder.add_func(ReservationSendCommit, wrap_common_func!(FuncsHandler::reservation_send_commit, (4) -> ()));
-        builder.add_func(OutOfGas, wrap_common_func!(FuncsHandler::out_of_gas, () -> ()));
-        builder.add_func(OutOfAllowance, wrap_common_func!(FuncsHandler::out_of_allowance, () -> ()));
+    fn bind_funcs(store: &mut Store<Ext>, builder: &mut EnvBuilder<Ext>) {
+        let memory = builder.memory.clone();
+        builder.add_func(store, BlockHeight, wrap_common_func!(FuncsHandler::block_height, (1) -> ())(memory.clone()));
+        builder.add_func(store, BlockTimestamp,wrap_common_func!(FuncsHandler::block_timestamp, (1) -> ())(memory.clone()));
+        builder.add_func(store, CreateProgram, wrap_common_func!(FuncsHandler::create_program, (7) -> ())(memory.clone()));
+        builder.add_func(store, CreateProgramWGas, wrap_common_func!(FuncsHandler::create_program_wgas, (8) -> ())(memory.clone()));
+        builder.add_func(store, Debug, wrap_common_func!(FuncsHandler::debug, (2) -> ())(memory.clone()));
+        builder.add_func(store, Panic, wrap_common_func!(FuncsHandler::panic, (2) -> ())(memory.clone()));
+        builder.add_func(store, OomPanic, wrap_common_func!(FuncsHandler::oom_panic, () -> ())(memory.clone()));
+        builder.add_func(store, Exit, wrap_common_func!(FuncsHandler::exit, (1) -> ())(memory.clone()));
+        builder.add_func(store, ReplyCode, wrap_common_func!(FuncsHandler::reply_code, (1) -> ())(memory.clone()));
+        builder.add_func(store, SignalCode, wrap_common_func!(FuncsHandler::signal_code, (1) -> ())(memory.clone()));
+        builder.add_func(store, ReserveGas, wrap_common_func!(FuncsHandler::reserve_gas, (3) -> ())(memory.clone()));
+        builder.add_func(store, ReplyDeposit, wrap_common_func!(FuncsHandler::reply_deposit, (3) -> ())(memory.clone()));
+        builder.add_func(store, UnreserveGas, wrap_common_func!(FuncsHandler::unreserve_gas, (2) -> ())(memory.clone()));
+        builder.add_func(store, GasAvailable, wrap_common_func!(FuncsHandler::gas_available, (1) -> ())(memory.clone()));
+        builder.add_func(store, Leave, wrap_common_func!(FuncsHandler::leave, () -> ())(memory.clone()));
+        builder.add_func(store, MessageId, wrap_common_func!(FuncsHandler::message_id, (1) -> ())(memory.clone()));
+        builder.add_func(store, PayProgramRent, wrap_common_func!(FuncsHandler::pay_program_rent, (2) -> ())(memory.clone()));
+        builder.add_func(store, ProgramId, wrap_common_func!(FuncsHandler::program_id, (1) -> ())(memory.clone()));
+        builder.add_func(store, Random, wrap_common_func!(FuncsHandler::random, (2) -> ())(memory.clone()));
+        builder.add_func(store, Read, wrap_common_func!(FuncsHandler::read, (4) -> ())(memory.clone()));
+        builder.add_func(store, Reply, wrap_common_func!(FuncsHandler::reply, (4) -> ())(memory.clone()));
+        builder.add_func(store, ReplyCommit, wrap_common_func!(FuncsHandler::reply_commit, (2) -> ())(memory.clone()));
+        builder.add_func(store, ReplyCommitWGas, wrap_common_func!(FuncsHandler::reply_commit_wgas, (3) -> ())(memory.clone()));
+        builder.add_func(store, ReplyPush, wrap_common_func!(FuncsHandler::reply_push, (3) -> ())(memory.clone()));
+        builder.add_func(store, ReplyTo, wrap_common_func!(FuncsHandler::reply_to, (1) -> ())(memory.clone()));
+        builder.add_func(store, SignalFrom, wrap_common_func!(FuncsHandler::signal_from, (1) -> ())(memory.clone()));
+        builder.add_func(store, ReplyWGas, wrap_common_func!(FuncsHandler::reply_wgas, (5) -> ())(memory.clone()));
+        builder.add_func(store, ReplyInput, wrap_common_func!(FuncsHandler::reply_input, (4) -> ())(memory.clone()));
+        builder.add_func(store, ReplyPushInput, wrap_common_func!(FuncsHandler::reply_push_input, (3) -> ())(memory.clone()));
+        builder.add_func(store, ReplyInputWGas, wrap_common_func!(FuncsHandler::reply_input_wgas, (5) -> ())(memory.clone()));
+        builder.add_func(store, Send, wrap_common_func!(FuncsHandler::send, (5) -> ())(memory.clone()));
+        builder.add_func(store, SendCommit, wrap_common_func!(FuncsHandler::send_commit, (4) -> ())(memory.clone()));
+        builder.add_func(store, SendCommitWGas, wrap_common_func!(FuncsHandler::send_commit_wgas, (5) -> ())(memory.clone()));
+        builder.add_func(store, SendInit, wrap_common_func!(FuncsHandler::send_init, (1) -> ())(memory.clone()));
+        builder.add_func(store, SendPush, wrap_common_func!(FuncsHandler::send_push, (4) -> ())(memory.clone()));
+        builder.add_func(store, SendWGas, wrap_common_func!(FuncsHandler::send_wgas, (6) -> ())(memory.clone()));
+        builder.add_func(store, SendInput, wrap_common_func!(FuncsHandler::send_input, (5) -> ())(memory.clone()));
+        builder.add_func(store, SendPushInput, wrap_common_func!(FuncsHandler::send_push_input, (4) -> ())(memory.clone()));
+        builder.add_func(store, SendInputWGas, wrap_common_func!(FuncsHandler::send_input_wgas, (6) -> ())(memory.clone()));
+        builder.add_func(store, Size, wrap_common_func!(FuncsHandler::size, (1) -> ())(memory.clone()));
+        builder.add_func(store, Source, wrap_common_func!(FuncsHandler::source, (1) -> ())(memory.clone()));
+        builder.add_func(store, Value, wrap_common_func!(FuncsHandler::value, (1) -> ())(memory.clone()));
+        builder.add_func(store, ValueAvailable, wrap_common_func!(FuncsHandler::value_available, (1) -> ())(memory.clone()));
+        builder.add_func(store, Wait, wrap_common_func!(FuncsHandler::wait, () -> ())(memory.clone()));
+        builder.add_func(store, WaitFor, wrap_common_func!(FuncsHandler::wait_for, (1) -> ())(memory.clone()));
+        builder.add_func(store, WaitUpTo, wrap_common_func!(FuncsHandler::wait_up_to, (1) -> ())(memory.clone()));
+        builder.add_func(store, Wake, wrap_common_func!(FuncsHandler::wake, (3) -> ())(memory.clone()));
+        builder.add_func(store, SystemReserveGas, wrap_common_func!(FuncsHandler::system_reserve_gas, (2) -> ())(memory.clone()));
+        builder.add_func(store, ReservationReply, wrap_common_func!(FuncsHandler::reservation_reply, (4) -> ())(memory.clone()));
+        builder.add_func(store, ReservationReplyCommit, wrap_common_func!(FuncsHandler::reservation_reply_commit, (2) -> ())(memory.clone()));
+        builder.add_func(store, ReservationSend, wrap_common_func!(FuncsHandler::reservation_send, (5) -> ())(memory.clone()));
+        builder.add_func(store, ReservationSendCommit, wrap_common_func!(FuncsHandler::reservation_send_commit, (4) -> ())(memory.clone()));
+        builder.add_func(store, OutOfGas, wrap_common_func!(FuncsHandler::out_of_gas, () -> ())(memory.clone()));
+        builder.add_func(store, OutOfAllowance, wrap_common_func!(FuncsHandler::out_of_allowance, () -> ())(memory.clone()));
 
-        builder.add_func(Alloc, wrap_common_func!(FuncsHandler::alloc, (1) -> (1)));
-        builder.add_func(Free, wrap_common_func!(FuncsHandler::free, (1) -> (1)));
+        builder.add_func(store, Alloc, wrap_common_func!(FuncsHandler::alloc, (1) -> (1))(memory.clone()));
+        builder.add_func(store, Free, wrap_common_func!(FuncsHandler::free, (1) -> (1))(memory));
     }
 }
 
@@ -272,7 +301,7 @@ where
     EntryPoint: WasmEntryPoint,
 {
     type Ext = EnvExt;
-    type Memory = MemoryWrap;
+    type Memory = MemoryWrap<EnvExt>;
     type SystemError = SandboxEnvironmentError;
 
     fn new(
@@ -291,8 +320,18 @@ where
             .map(DispatchKind::forbidden_funcs)
             .unwrap_or_default();
 
-        let mut builder = EnvBuilder::<EnvExt> {
-            env_def_builder: EnvironmentDefinitionBuilder::new(),
+        let mut store = Store::new(None);
+
+        let memory: DefaultExecutorMemory =
+            SandboxMemory::<_, Store<EnvExt>>::new(&mut store, mem_size.raw(), None)
+                .map_err(|e| System(CreateEnvMemory(e)))?;
+
+        let mut builder = EnvBuilder {
+            env_def_builder: <EnvironmentDefinitionBuilder as SandboxEnvironmentBuilder<
+                EnvExt,
+                _,
+            >>::new(),
+            memory: memory.clone(),
             forbidden_funcs: ext
                 .forbidden_funcs()
                 .iter()
@@ -300,16 +339,10 @@ where
                 .chain(entry_forbidden)
                 .collect(),
             funcs_count: 0,
+            _ext: PhantomData,
         };
 
-        let memory: DefaultExecutorMemory = match SandboxMemory::new(mem_size.raw(), None) {
-            Ok(mem) => mem,
-            Err(e) => return Err(System(CreateEnvMemory(e))),
-        };
-
-        builder.add_memory(memory.clone());
-
-        Self::bind_funcs(&mut builder);
+        Self::bind_funcs(&mut store, &mut builder);
 
         // Check that we have implementations for all the sys-calls.
         // This is intended to panic during any testing, when the
@@ -320,25 +353,22 @@ where
             "Not all existing sys-calls were added to the module's env."
         );
 
-        let env_builder: EnvironmentDefinitionBuilder<_> = builder.into();
+        let env_builder: EnvironmentDefinitionBuilder = builder.into();
+        let instance = Instance::new(&mut store, binary, env_builder)
+            .map_err(|e| Actor(ext.gas_amount(), format!("{e:?}")))?;
 
-        let mut runtime = Runtime {
+        *store.data_mut() = Some(State {
             ext,
-            memory: MemoryWrap::new(memory),
-            globals: Default::default(),
-            memory_manager: Default::default(),
             termination_reason: ActorTerminationReason::Success.into(),
-        };
+        });
 
-        match Instance::new(binary, env_builder) {
-            Ok(instance) => Ok(Self {
-                instance,
-                runtime,
-                entries,
-                entry_point,
-            }),
-            Err(e) => Err(Actor(runtime.ext.gas_amount(), format!("{e:?}"))),
-        }
+        Ok(Self {
+            instance,
+            entries,
+            entry_point,
+            store,
+            memory,
+        })
     }
 
     fn execute<PrepareMemory, PrepareMemoryError>(
@@ -358,29 +388,33 @@ where
 
         let Self {
             mut instance,
-            mut runtime,
             entries,
             entry_point,
+            mut store,
+            memory,
         } = self;
 
         let stack_end = instance
-            .get_global_val(STACK_END_EXPORT_NAME)
+            .get_global_val(&store, STACK_END_EXPORT_NAME)
             .and_then(|global| global.as_i32())
             .map(|global| global as u32);
 
-        runtime.globals = instance
+        let globals = instance
             .instance_globals()
             .ok_or(System(GlobalsNotSupported))?;
 
-        let GasLeft { gas, allowance } = runtime.ext.gas_left();
+        let GasLeft { gas, allowance } = store
+            .data_mut()
+            .as_ref()
+            .unwrap_or_else(|| unreachable!(""))
+            .ext
+            .gas_left();
 
-        runtime
-            .globals
+        globals
             .set_global_val(GLOBAL_NAME_GAS, Value::I64(gas as i64))
             .map_err(|_| System(WrongInjectedGas))?;
 
-        runtime
-            .globals
+        globals
             .set_global_val(GLOBAL_NAME_ALLOWANCE, Value::I64(allowance as i64))
             .map_err(|_| System(WrongInjectedAllowance))?;
 
@@ -393,12 +427,23 @@ where
             unreachable!("We cannot use sandbox backend in std environment currently");
         };
 
-        match prepare_memory(&mut runtime.memory, stack_end, globals_config) {
+        let mut memory_wrap = MemoryWrap::new(memory.clone(), store);
+        match prepare_memory(&mut memory_wrap, stack_end, globals_config) {
             Ok(_) => (),
             Err(e) => {
-                return Err(PrepareMemory(runtime.ext.gas_amount(), e));
+                let store = &mut memory_wrap.store;
+                return Err(PrepareMemory(
+                    store
+                        .data_mut()
+                        .as_ref()
+                        .unwrap_or_else(|| unreachable!("state must be set in Environment::new"))
+                        .ext
+                        .gas_amount(),
+                    e,
+                ));
             }
         }
+        let mut store = memory_wrap.into_store();
 
         let needs_execution = entry_point
             .try_into_kind()
@@ -406,26 +451,28 @@ where
             .unwrap_or(true);
 
         let res = needs_execution
-            .then(|| instance.invoke(entry_point.as_entry(), &[], &mut runtime))
+            .then(|| instance.invoke(&mut store, entry_point.as_entry(), &[]))
             .unwrap_or(Ok(ReturnValue::Unit));
 
-        let gas = runtime
-            .globals
+        let gas = globals
             .get_global_val(GLOBAL_NAME_GAS)
             .and_then(runtime::as_i64)
             .ok_or(System(WrongInjectedGas))?;
 
-        let allowance = runtime
-            .globals
+        let allowance = globals
             .get_global_val(GLOBAL_NAME_ALLOWANCE)
             .and_then(runtime::as_i64)
             .ok_or(System(WrongInjectedAllowance))?;
 
-        let (ext, memory_wrap, termination_reason) = runtime.terminate(res, gas, allowance);
+        let (ext, _, termination_reason) = store
+            .data_mut()
+            .take()
+            .unwrap_or_else(|| unreachable!("state must be set in Environment::new"))
+            .terminate(res, gas, allowance);
 
         Ok(BackendReport {
             termination_reason,
-            memory_wrap,
+            memory_wrap: MemoryWrap::new(memory, store),
             ext,
         })
     }
