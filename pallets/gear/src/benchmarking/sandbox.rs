@@ -54,8 +54,7 @@ where
     /// Creates an instance from the supplied module and supplies as much memory
     /// to the instance as the module declares as imported.
     fn from(module: &WasmModule<T>) -> Self {
-        let mut env_builder =
-            <EnvironmentDefinitionBuilder as SandboxEnvironmentBuilder<(), _>>::new();
+        let mut env_builder = EnvironmentDefinitionBuilder::new();
         let mut store = Store::new(());
         let memory = module.add_memory(&mut store, &mut env_builder);
         let instance = Instance::new(&mut store, &module.code, env_builder)

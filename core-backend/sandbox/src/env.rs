@@ -322,15 +322,11 @@ where
 
         let mut store = Store::new(None);
 
-        let memory: DefaultExecutorMemory =
-            SandboxMemory::<_, Store<EnvExt>>::new(&mut store, mem_size.raw(), None)
-                .map_err(|e| System(CreateEnvMemory(e)))?;
+        let memory: DefaultExecutorMemory = SandboxMemory::new(&mut store, mem_size.raw(), None)
+            .map_err(|e| System(CreateEnvMemory(e)))?;
 
         let mut builder = EnvBuilder {
-            env_def_builder: <EnvironmentDefinitionBuilder as SandboxEnvironmentBuilder<
-                EnvExt,
-                _,
-            >>::new(),
+            env_def_builder: EnvironmentDefinitionBuilder::new(),
             memory: memory.clone(),
             forbidden_funcs: ext
                 .forbidden_funcs()

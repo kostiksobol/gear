@@ -91,7 +91,7 @@ impl From<Error> for HostError {
 /// [`EnvironmentDefinitionBuilder`]: struct.EnvironmentDefinitionBuilder.html
 pub type HostFuncType<T> = fn(&mut T, &[Value]) -> Result<ReturnValue, HostError>;
 
-pub trait SandboxStore<T> {
+pub trait SandboxStore<T>: default_executor::SandboxStoreExt {
     fn data_mut(&mut self) -> &mut T;
 }
 
@@ -100,10 +100,7 @@ pub trait SandboxStore<T> {
 ///
 /// The memory can't be directly accessed by supervisor, but only
 /// through designated functions [`get`](SandboxMemory::get) and [`set`](SandboxMemory::set).
-pub trait SandboxMemory<T, S>: Sized + Clone
-where
-    S: SandboxStore<T>,
-{
+pub trait SandboxMemory<T>: Sized + Clone {
     /// Construct a new linear memory instance.
     ///
     /// The memory allocated with initial number of pages specified by `initial`.
@@ -123,27 +120,37 @@ where
     /// Read a memory area at the address `ptr` with the size of the provided slice `buf`.
     ///
     /// Returns `Err` if the range is out-of-bounds.
-    fn get(&self, store: &S, ptr: u32, buf: &mut [u8]) -> Result<(), Error>;
+    fn get<S>(&self, store: &S, ptr: u32, buf: &mut [u8]) -> Result<(), Error>
+    where
+        S: SandboxStore<T>;
 
     /// Write a memory area at the address `ptr` with contents of the provided slice `buf`.
     ///
     /// Returns `Err` if the range is out-of-bounds.
-    fn set(&self, store: &mut S, ptr: u32, value: &[u8]) -> Result<(), Error>;
+    fn set<S>(&self, store: &mut S, ptr: u32, value: &[u8]) -> Result<(), Error>
+    where
+        S: SandboxStore<T>;
 
     /// Grow memory with provided number of pages.
     ///
     /// Returns `Err` if attempted to allocate more memory than permitted by the limit.
-    fn grow(&self, store: &mut S, pages: u32) -> Result<u32, Error>;
+    fn grow<S>(&self, store: &mut S, pages: u32) -> Result<u32, Error>
+    where
+        S: SandboxStore<T>;
 
     /// Returns current memory size.
     ///
     /// Maximum memory size cannot exceed 65536 pages or 4GiB.
-    fn size(&self, store: &S) -> u32;
+    fn size<S>(&self, store: &S) -> u32
+    where
+        S: SandboxStore<T>;
 
     /// Returns pointer to the begin of wasm mem buffer
     /// # Safety
     /// Pointer is intended to use by `mprotect` function.
-    unsafe fn get_buff(&self, store: &mut S) -> HostPointer;
+    unsafe fn get_buff<S>(&self, store: &mut S) -> HostPointer
+    where
+        S: SandboxStore<T>;
 }
 
 pub trait SandboxFunctionArg: Sized {
@@ -314,11 +321,7 @@ impl_sandbox_function!(A, B, C, D, E, F, G, H);
 ///
 /// The sandboxed module can access only the entities which were defined and passed
 /// to the module at the instantiation time.
-pub trait SandboxEnvironmentBuilder<State, Memory>: Sized {
-    type Caller<'a>: SandboxStore<State>
-    where
-        State: 'a;
-
+pub trait SandboxEnvironmentBuilder<Memory>: Sized {
     /// Construct a new `EnvironmentDefinitionBuilder`.
     fn new() -> Self;
 
@@ -328,7 +331,7 @@ pub trait SandboxEnvironmentBuilder<State, Memory>: Sized {
     /// can import function passed here with any signature it wants. It can even import
     /// the same function (i.e. with same `module` and `field`) several times. It's up to
     /// the user code to check or constrain the types of signatures.
-    fn add_host_func<N1, N2, F, Args, R>(
+    fn add_host_func<N1, N2, F, Args, R, State>(
         &mut self,
         store: &mut default_executor::Store<State>,
         module: N1,
@@ -337,7 +340,10 @@ pub trait SandboxEnvironmentBuilder<State, Memory>: Sized {
     ) where
         N1: Into<String>,
         N2: Into<String>,
-        F: for<'a> SandboxFunction<Self::Caller<'a>, Args, R, State> + Send + Sync + 'static,
+        F: for<'a> SandboxFunction<default_executor::Caller<'a, State>, Args, R, State>
+            + Send
+            + Sync
+            + 'static,
         Args: SandboxFunctionArgs,
         R: SandboxFunctionResult;
 
@@ -354,13 +360,11 @@ pub trait SandboxEnvironmentBuilder<State, Memory>: Sized {
 pub trait SandboxInstance: Sized {
     type State;
 
-    type Store: SandboxStore<Self::State>;
-
     /// The memory type used for this sandbox.
-    type Memory: SandboxMemory<Self::State, Self::Store>;
+    type Memory: SandboxMemory<Self::State>;
 
     /// The environment builder used to construct this sandbox.
-    type EnvironmentBuilder: SandboxEnvironmentBuilder<Self::State, Self::Memory>;
+    type EnvironmentBuilder: SandboxEnvironmentBuilder<Self::Memory>;
 
     /// The globals type used for this sandbox to change globals.
     type InstanceGlobals: InstanceGlobals;

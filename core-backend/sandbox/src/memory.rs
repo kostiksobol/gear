@@ -137,12 +137,8 @@ mod tests {
             termination_reason: ActorTerminationReason::Success.into(),
         }));
 
-        let memory = WasmMemory::<_, Store<MockExt>>::new(
-            &mut store,
-            static_pages as u32,
-            Some(max_pages as u32),
-        )
-        .expect("Memory creation failed");
+        let memory = WasmMemory::new(&mut store, static_pages as u32, Some(max_pages as u32))
+            .expect("Memory creation failed");
         let memory = MemoryWrap::new(memory, store);
 
         (

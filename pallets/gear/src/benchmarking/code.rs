@@ -386,9 +386,7 @@ where
         } else {
             return None;
         };
-        let memory =
-            <Memory as SandboxMemory<_, Store<()>>>::new(store, memory.min_pages.raw(), None)
-                .unwrap();
+        let memory = Memory::new(store, memory.min_pages.raw(), None).unwrap();
         env.add_memory("env", "memory", memory.clone());
         Some(memory)
     }

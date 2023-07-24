@@ -38,6 +38,8 @@ use crate::{
     SandboxStore, Value, ValueType,
 };
 
+pub trait SandboxStoreExt: AsContext + AsContextMut {}
+
 pub struct Store<T>(wasmi::Store<T>);
 
 impl<T> Store<T> {
@@ -57,6 +59,8 @@ impl<T> SandboxStore<T> for Store<T> {
         self.0.data_mut()
     }
 }
+
+impl<T> SandboxStoreExt for Store<T> {}
 
 impl<T> AsContext for Store<T> {
     type UserState = T;
@@ -93,6 +97,8 @@ impl<T> SandboxStore<T> for Caller<'_, T> {
     }
 }
 
+impl<T> SandboxStoreExt for Caller<'_, T> {}
+
 impl<T> AsContext for Caller<'_, T> {
     type UserState = T;
 
@@ -113,17 +119,17 @@ pub struct Memory {
     memref: wasmi::Memory,
 }
 
-impl<T, S> super::SandboxMemory<T, S> for Memory
-where
-    S: SandboxStore<T> + AsContext<UserState = T> + AsContextMut<UserState = T>,
-{
+impl<T> super::SandboxMemory<T> for Memory {
     fn new(store: &mut Store<T>, initial: u32, maximum: Option<u32>) -> Result<Memory, Error> {
         let ty = MemoryType::new(initial, maximum).map_err(|_| Error::Module)?;
         let memref = wasmi::Memory::new(store, ty).map_err(|_| Error::Module)?;
         Ok(Memory { memref })
     }
 
-    fn get(&self, store: &S, ptr: u32, buf: &mut [u8]) -> Result<(), Error> {
+    fn get<S>(&self, store: &S, ptr: u32, buf: &mut [u8]) -> Result<(), Error>
+    where
+        S: SandboxStore<T>,
+    {
         let data = self
             .memref
             .data(store)
@@ -133,7 +139,10 @@ where
         Ok(())
     }
 
-    fn set(&self, store: &mut S, ptr: u32, value: &[u8]) -> Result<(), Error> {
+    fn set<S>(&self, store: &mut S, ptr: u32, value: &[u8]) -> Result<(), Error>
+    where
+        S: SandboxStore<T>,
+    {
         let data = self
             .memref
             .data_mut(store)
@@ -143,7 +152,10 @@ where
         Ok(())
     }
 
-    fn grow(&self, store: &mut S, pages: u32) -> Result<u32, Error> {
+    fn grow<S>(&self, store: &mut S, pages: u32) -> Result<u32, Error>
+    where
+        S: SandboxStore<T>,
+    {
         let pages = Pages::new(pages).ok_or(Error::MemoryGrow)?;
         self.memref
             .grow(store, pages)
@@ -151,11 +163,17 @@ where
             .map_err(|_| Error::MemoryGrow)
     }
 
-    fn size(&self, store: &S) -> u32 {
+    fn size<S>(&self, store: &S) -> u32
+    where
+        S: SandboxStore<T>,
+    {
         self.memref.current_pages(store).into()
     }
 
-    unsafe fn get_buff(&self, store: &mut S) -> u64 {
+    unsafe fn get_buff<S>(&self, store: &mut S) -> u64
+    where
+        S: SandboxStore<T>,
+    {
         self.memref.data_mut(store).as_mut_ptr() as usize as u64
     }
 }
@@ -170,25 +188,23 @@ pub struct EnvironmentDefinitionBuilder {
     externs: BTreeMap<(String, String), ExternVal>,
 }
 
-impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBuilder {
-    type Caller<'a> = Caller<'a, T> where T: 'a;
-
+impl super::SandboxEnvironmentBuilder<Memory> for EnvironmentDefinitionBuilder {
     fn new() -> Self {
         Self {
             externs: BTreeMap::new(),
         }
     }
 
-    fn add_host_func<N1, N2, F, Args, R>(
+    fn add_host_func<N1, N2, F, Args, R, State>(
         &mut self,
-        store: &mut Store<T>,
+        store: &mut Store<State>,
         module: N1,
         field: N2,
         f: F,
     ) where
         N1: Into<String>,
         N2: Into<String>,
-        F: for<'a> SandboxFunction<Caller<'a, T>, Args, R, T> + Send + Sync + 'static,
+        F: for<'a> SandboxFunction<Caller<'a, State>, Args, R, State> + Send + Sync + 'static,
         Args: SandboxFunctionArgs,
         R: SandboxFunctionResult,
     {
@@ -245,7 +261,6 @@ impl super::InstanceGlobals for InstanceGlobals {
 
 impl<T> super::SandboxInstance for Instance<T> {
     type State = T;
-    type Store = Store<T>;
     type Memory = Memory;
     type EnvironmentBuilder = EnvironmentDefinitionBuilder;
     type InstanceGlobals = InstanceGlobals;
@@ -382,8 +397,7 @@ mod tests {
         let state = State { counter: 0 };
         let mut store = Store::new(state);
 
-        let mut env_builder =
-            <EnvironmentDefinitionBuilder as SandboxEnvironmentBuilder<State, _>>::new();
+        let mut env_builder = EnvironmentDefinitionBuilder::new();
         env_builder.add_host_func(&mut store, "env", "assert", env_assert);
         env_builder.add_host_func(&mut store, "env", "inc_counter", env_inc_counter);
 

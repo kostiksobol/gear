@@ -1676,7 +1676,7 @@ benchmarks! {
         let r in 0 .. API_BENCHMARK_BATCHES;
         let mut store = Store::new(None);
         let mem = DefaultExecutorMemory::new(&mut store, 1, None).unwrap();
-        let mut mem = MemoryWrap::new(mem, store);
+        let mut mem = MemoryWrap::<gear_backend_common::mock::MockExt>::new(mem, store);
     }: {
         for _ in 0..(r * API_BENCHMARK_BATCH_SIZE) {
             mem.grow(1.into()).unwrap();
