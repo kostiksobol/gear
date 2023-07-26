@@ -18,38 +18,49 @@
 
 //! A WASM executor utilizing the sandbox runtime interface of the host.
 
+use crate::{
+    env, Error, ReturnValue, SandboxFunction, SandboxFunctionArgs, SandboxFunctionResult,
+    SandboxStore, Value, ValueType,
+};
+use alloc::string::String;
 use codec::{Decode, Encode};
-
 use gear_runtime_interface::sandbox;
-use sp_std::{marker, mem, prelude::*, rc::Rc, slice, vec};
+use gear_sandbox_env::HostError;
+use sp_std::{marker::PhantomData, mem, prelude::*, rc::Rc, slice, vec};
 use sp_wasm_interface::HostPointer;
 
-use crate::{env, Error, HostFuncType, ReturnValue, Value};
+impl SandboxFunctionResult for ReturnValue {
+    fn result() -> Option<ValueType> {
+        // TODO: make as extension trait
+        unreachable!("Unused in host executor")
+    }
 
-mod ffi {
-    use super::HostFuncType;
-    use sp_std::mem;
-
-    /// Index into the default table that points to a `HostFuncType`.
-    pub type HostFuncIndex = usize;
-
-    /// Coerce `HostFuncIndex` to a callable host function pointer.
-    ///
-    /// # Safety
-    ///
-    /// This function should be only called with a `HostFuncIndex` that was previously registered
-    /// in the environment definition. Typically this should only
-    /// be called with an argument received in `dispatch_thunk`.
-    pub unsafe fn coerce_host_index_to_func<T>(idx: HostFuncIndex) -> HostFuncType<T> {
-        // We need to ensure that sizes of a callable function pointer and host function index is
-        // indeed equal.
-        // We can't use `static_assertions` create because it makes compiler panic, fallback to
-        // runtime assert. const_assert!(mem::size_of::<HostFuncIndex>() ==
-        // mem::size_of::<HostFuncType<T>>());
-        assert!(mem::size_of::<HostFuncIndex>() == mem::size_of::<HostFuncType<T>>());
-        mem::transmute::<HostFuncIndex, HostFuncType<T>>(idx)
+    fn into_return_value(self) -> ReturnValue {
+        self
     }
 }
+
+pub trait SandboxStoreExt {}
+
+pub struct Store<T>(T);
+
+impl<T> SandboxStore<T> for Store<T> {
+    fn data_mut(&mut self) -> &mut T {
+        &mut self.0
+    }
+}
+
+impl<T> SandboxStoreExt for Store<T> {}
+
+pub struct Caller<'a, T>(&'a mut T);
+
+impl<T> SandboxStore<T> for Caller<'_, T> {
+    fn data_mut(&mut self) -> &mut T {
+        self.0
+    }
+}
+
+impl<T> SandboxStoreExt for Caller<'_, T> {}
 
 struct MemoryHandle {
     memory_idx: u32,
@@ -69,8 +80,8 @@ pub struct Memory {
     handle: Rc<MemoryHandle>,
 }
 
-impl super::SandboxMemory for Memory {
-    fn new(initial: u32, maximum: Option<u32>) -> Result<Memory, Error> {
+impl<T> super::SandboxMemory<T> for Memory {
+    fn new(_store: &mut Store<T>, initial: u32, maximum: Option<u32>) -> Result<Memory, Error> {
         let maximum = if let Some(maximum) = maximum {
             maximum
         } else {
@@ -85,7 +96,10 @@ impl super::SandboxMemory for Memory {
         }
     }
 
-    fn get(&self, offset: u32, buf: &mut [u8]) -> Result<(), Error> {
+    fn get<S>(&self, _store: &S, offset: u32, buf: &mut [u8]) -> Result<(), Error>
+    where
+        S: SandboxStore<T>,
+    {
         let result = sandbox::memory_get(
             self.handle.memory_idx,
             offset,
@@ -99,7 +113,10 @@ impl super::SandboxMemory for Memory {
         }
     }
 
-    fn set(&self, offset: u32, val: &[u8]) -> Result<(), Error> {
+    fn set<S>(&self, _store: &mut S, offset: u32, val: &[u8]) -> Result<(), Error>
+    where
+        S: SandboxStore<T>,
+    {
         let result = sandbox::memory_set(
             self.handle.memory_idx,
             offset,
@@ -113,33 +130,45 @@ impl super::SandboxMemory for Memory {
         }
     }
 
-    fn grow(&self, pages: u32) -> Result<u32, Error> {
-        let size = self.size();
+    fn grow<S>(&self, store: &mut S, pages: u32) -> Result<u32, Error>
+    where
+        S: SandboxStore<T>,
+    {
+        let size = self.size(store);
         sandbox::memory_grow(self.handle.memory_idx, pages);
         Ok(size)
     }
 
-    fn size(&self) -> u32 {
+    fn size<S>(&self, _store: &S) -> u32
+    where
+        S: SandboxStore<T>,
+    {
         sandbox::memory_size(self.handle.memory_idx)
     }
 
-    unsafe fn get_buff(&self) -> HostPointer {
+    unsafe fn get_buff<S>(&self, _store: &mut S) -> HostPointer
+    where
+        S: SandboxStore<T>,
+    {
         sandbox::get_buff(self.handle.memory_idx)
     }
 }
 
+type BoxedSandboxFunction<T> =
+    Box<dyn for<'a> SandboxFunction<Caller<'a, T>, &'a [Value], ReturnValue, T>>;
+
 /// A builder for the environment of the sandboxed WASM module.
 pub struct EnvironmentDefinitionBuilder<T> {
     env_def: env::EnvironmentDefinition,
+    funcs: Vec<BoxedSandboxFunction<T>>,
     retained_memories: Vec<Memory>,
-    _marker: marker::PhantomData<T>,
 }
 
 impl<T> EnvironmentDefinitionBuilder<T> {
     fn add_entry<N1, N2>(&mut self, module: N1, field: N2, extern_entity: env::ExternEntity)
     where
-        N1: Into<Vec<u8>>,
-        N2: Into<Vec<u8>>,
+        N1: Into<String>,
+        N2: Into<String>,
     {
         let entry = env::Entry {
             module_name: module.into(),
@@ -151,34 +180,70 @@ impl<T> EnvironmentDefinitionBuilder<T> {
 }
 
 impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBuilder<T> {
-    fn new() -> EnvironmentDefinitionBuilder<T> {
-        EnvironmentDefinitionBuilder {
+    fn new() -> Self {
+        Self {
             env_def: env::EnvironmentDefinition {
                 entries: Vec::new(),
             },
+            funcs: Vec::new(),
             retained_memories: Vec::new(),
-            _marker: marker::PhantomData::<T>,
         }
     }
 
-    fn add_host_func<N1, N2>(&mut self, module: N1, field: N2, f: HostFuncType<T>)
-    where
-        N1: Into<Vec<u8>>,
-        N2: Into<Vec<u8>>,
+    fn add_host_func<N1, N2, F, Args, R>(
+        &mut self,
+        _store: &mut Store<T>,
+        module: N1,
+        field: N2,
+        f: F,
+    ) where
+        N1: Into<String>,
+        N2: Into<String>,
+        F: for<'a> SandboxFunction<Caller<'a, T>, Args, R, T> + Send + Sync + 'static,
+        Args: SandboxFunctionArgs + 'static,
+        R: SandboxFunctionResult + 'static,
     {
+        struct Converter<F, Args, R> {
+            f: F,
+            _args: PhantomData<Args>,
+            _r: PhantomData<R>,
+        }
+
+        impl<F, State, Args, R> SandboxFunction<Caller<'_, State>, &[Value], ReturnValue, State>
+            for Converter<F, Args, R>
+        where
+            F: for<'a> SandboxFunction<Caller<'a, State>, Args, R, State>,
+            R: SandboxFunctionResult + 'static,
+        {
+            fn call(
+                &self,
+                store: Caller<'_, State>,
+                args: &[Value],
+            ) -> Result<ReturnValue, HostError> {
+                self.f.call(store, args).map(R::into_return_value)
+            }
+        }
+
+        let f = Box::new(Converter {
+            f,
+            _args: PhantomData,
+            _r: PhantomData,
+        }) as BoxedSandboxFunction<T>;
+        self.funcs.push(f);
+        let f = self.funcs.last().expect("infallible") as *const BoxedSandboxFunction<T>;
         let f = env::ExternEntity::Function(f as u32);
         self.add_entry(module, field, f);
     }
 
     fn add_memory<N1, N2>(&mut self, module: N1, field: N2, mem: Memory)
     where
-        N1: Into<Vec<u8>>,
-        N2: Into<Vec<u8>>,
+        N1: Into<String>,
+        N2: Into<String>,
     {
         // We need to retain memory to keep it alive while the EnvironmentDefinitionBuilder alive.
         self.retained_memories.push(mem.clone());
 
-        let mem = env::ExternEntity::Memory(mem.handle.memory_idx as u32);
+        let mem = env::ExternEntity::Memory(mem.handle.memory_idx);
         self.add_entry(module, field, mem);
     }
 }
@@ -187,7 +252,7 @@ impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBui
 pub struct Instance<T> {
     instance_idx: u32,
     _retained_memories: Vec<Memory>,
-    _marker: marker::PhantomData<T>,
+    _funcs: Vec<BoxedSandboxFunction<T>>,
 }
 
 #[derive(Clone, Default)]
@@ -219,7 +284,7 @@ extern "C" fn dispatch_thunk<T>(
     serialized_args_ptr: *const u8,
     serialized_args_len: usize,
     state: usize,
-    f: ffi::HostFuncIndex,
+    f: usize,
 ) -> u64 {
     let serialized_args = unsafe {
         if serialized_args_len == 0 {
@@ -238,13 +303,14 @@ extern "C" fn dispatch_thunk<T>(
         // This should be safe since `coerce_host_index_to_func` is called with an argument
         // received in an `dispatch_thunk` implementation, so `f` should point
         // on a valid host function.
-        let f = ffi::coerce_host_index_to_func(f);
+        let f = f as *const BoxedSandboxFunction<T>;
+        let f = f.as_ref().expect("infallible");
 
         // This should be safe since mutable reference to T is passed upon the invocation.
         let state = &mut *(state as *mut T);
 
         // Pass control flow to the designated function.
-        let result = f(state, &args).encode();
+        let result = f.call(Caller(state), &args).encode();
 
         // Leak the result vector and return the pointer to return data.
         let result_ptr = result.as_ptr() as u64;
@@ -255,24 +321,25 @@ extern "C" fn dispatch_thunk<T>(
     }
 }
 
-impl<T> super::SandboxInstance<T> for Instance<T> {
+impl<T> super::SandboxInstance for Instance<T> {
+    type State = T;
     type Memory = Memory;
     type EnvironmentBuilder = EnvironmentDefinitionBuilder<T>;
     type InstanceGlobals = InstanceGlobals;
 
     fn new(
+        store: &mut Store<Self::State>,
         code: &[u8],
-        env_def_builder: &EnvironmentDefinitionBuilder<T>,
-        state: &mut T,
+        env_def_builder: EnvironmentDefinitionBuilder<T>,
     ) -> Result<Instance<T>, Error> {
         let serialized_env_def: Vec<u8> = env_def_builder.env_def.encode();
         // It's very important to instantiate thunk with the right type.
         let dispatch_thunk = dispatch_thunk::<T>;
         let result = sandbox::instantiate(
-            dispatch_thunk as u32,
+            dispatch_thunk as usize as u32,
             code,
             &serialized_env_def,
-            state as *const T as _,
+            store.data_mut() as *const T as _,
         );
 
         let instance_idx = match result {
@@ -282,15 +349,22 @@ impl<T> super::SandboxInstance<T> for Instance<T> {
         };
 
         // We need to retain memories to keep them alive while the Instance is alive.
-        let retained_memories = env_def_builder.retained_memories.clone();
+        let retained_memories = env_def_builder.retained_memories;
+        // Keep funcs allocated so `dispatch_thunk` access correct memory.
+        let funcs = env_def_builder.funcs;
         Ok(Instance {
             instance_idx,
             _retained_memories: retained_memories,
-            _marker: marker::PhantomData::<T>,
+            _funcs: funcs,
         })
     }
 
-    fn invoke(&mut self, name: &str, args: &[Value], state: &mut T) -> Result<ReturnValue, Error> {
+    fn invoke(
+        &mut self,
+        store: &mut Store<T>,
+        name: &str,
+        args: &[Value],
+    ) -> Result<ReturnValue, Error> {
         let serialized_args = args.to_vec().encode();
         let mut return_val = vec![0u8; ReturnValue::ENCODED_MAX_SIZE];
 
@@ -300,7 +374,7 @@ impl<T> super::SandboxInstance<T> for Instance<T> {
             &serialized_args,
             return_val.as_mut_ptr() as _,
             return_val.len() as u32,
-            state as *const T as _,
+            store.data_mut() as *const T as _,
         );
 
         match result {
@@ -314,7 +388,7 @@ impl<T> super::SandboxInstance<T> for Instance<T> {
         }
     }
 
-    fn get_global_val(&self, name: &str) -> Option<Value> {
+    fn get_global_val(&self, _store: &Store<T>, name: &str) -> Option<Value> {
         sandbox::get_global_val(self.instance_idx, name)
     }
 

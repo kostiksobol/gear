@@ -18,24 +18,17 @@
 
 //! An embedded WASM executor utilizing `wasmi`.
 
-use alloc::string::String;
-use std::marker::PhantomData;
-
-use sp_wasm_interface::HostPointer;
-use wasmi::{
-    AsContext, AsContextMut, Engine, Func, FuncType, Linker, MemoryType, Module, StoreContext,
-    StoreContextMut,
-};
-
-use sp_std::{collections::btree_map::BTreeMap, prelude::*};
-use wasmi::{
-    core::{Pages, Trap, ValueType as RuntimeValueType},
-    Value as RuntimeValue,
-};
-
 use crate::{
     Error, HostError, ReturnValue, SandboxFunction, SandboxFunctionArgs, SandboxFunctionResult,
     SandboxStore, Value, ValueType,
+};
+use alloc::string::String;
+use sp_std::{collections::btree_map::BTreeMap, marker::PhantomData, prelude::*};
+use sp_wasm_interface::HostPointer;
+use wasmi::{
+    core::{Pages, Trap, ValueType as RuntimeValueType},
+    AsContext, AsContextMut, Engine, ExternRef, Func, FuncType, Linker, MemoryType, Module,
+    StoreContext, StoreContextMut, Value as RuntimeValue,
 };
 
 pub trait SandboxStoreExt: AsContext + AsContextMut {}
@@ -184,27 +177,29 @@ enum ExternVal {
 }
 
 /// A builder for the environment of the sandboxed WASM module.
-pub struct EnvironmentDefinitionBuilder {
+pub struct EnvironmentDefinitionBuilder<T> {
     externs: BTreeMap<(String, String), ExternVal>,
+    _state: PhantomData<T>,
 }
 
-impl super::SandboxEnvironmentBuilder<Memory> for EnvironmentDefinitionBuilder {
+impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBuilder<T> {
     fn new() -> Self {
         Self {
             externs: BTreeMap::new(),
+            _state: PhantomData,
         }
     }
 
-    fn add_host_func<N1, N2, F, Args, R, State>(
+    fn add_host_func<N1, N2, F, Args, R>(
         &mut self,
-        store: &mut Store<State>,
+        store: &mut Store<T>,
         module: N1,
         field: N2,
         f: F,
     ) where
         N1: Into<String>,
         N2: Into<String>,
-        F: for<'a> SandboxFunction<Caller<'a, State>, Args, R, State> + Send + Sync + 'static,
+        F: for<'a> SandboxFunction<Caller<'a, T>, Args, R, T> + Send + Sync + 'static,
         Args: SandboxFunctionArgs,
         R: SandboxFunctionResult,
     {
@@ -262,15 +257,15 @@ impl super::InstanceGlobals for InstanceGlobals {
 impl<T> super::SandboxInstance for Instance<T> {
     type State = T;
     type Memory = Memory;
-    type EnvironmentBuilder = EnvironmentDefinitionBuilder;
+    type EnvironmentBuilder = EnvironmentDefinitionBuilder<T>;
     type InstanceGlobals = InstanceGlobals;
 
     fn new(
         mut store: &mut Store<T>,
         code: &[u8],
-        env_def_builder: EnvironmentDefinitionBuilder,
+        env_def_builder: EnvironmentDefinitionBuilder<T>,
     ) -> Result<Self, Error> {
-        let EnvironmentDefinitionBuilder { externs } = env_def_builder;
+        let EnvironmentDefinitionBuilder { externs, _state } = env_def_builder;
 
         let module = Module::new(store.engine(), code).map_err(|_| Error::Module)?;
 
@@ -310,7 +305,7 @@ impl<T> super::SandboxInstance for Instance<T> {
             .ok_or(Error::Execution)?;
 
         let results = func.ty(&store).results().len();
-        let mut results = vec![RuntimeValue::I32(0xBAAAAAD); results];
+        let mut results = vec![RuntimeValue::ExternRef(ExternRef::null()); results];
         func.call(&mut store, &args, &mut results)
             .map_err(|_| Error::Execution)?;
 

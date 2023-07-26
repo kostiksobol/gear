@@ -28,7 +28,7 @@ use alloc::{collections::BTreeSet, format};
 use core::{
     convert::Infallible,
     fmt::Display,
-    marker::{PhantomData, Send, Sync},
+    marker::{Send, Sync},
 };
 use gear_backend_common::{
     funcs::FuncsHandler,
@@ -175,11 +175,10 @@ where
 // A helping wrapper for `EnvironmentDefinitionBuilder` and `forbidden_funcs`.
 // It makes adding functions to `EnvironmentDefinitionBuilder` shorter.
 struct EnvBuilder<Ext: BackendExternalities> {
-    env_def_builder: EnvironmentDefinitionBuilder,
+    env_def_builder: EnvironmentDefinitionBuilder<HostState<Ext>>,
     memory: DefaultExecutorMemory,
     forbidden_funcs: BTreeSet<SysCallName>,
     funcs_count: usize,
-    _ext: PhantomData<Ext>,
 }
 
 impl<Ext> EnvBuilder<Ext>
@@ -195,8 +194,8 @@ where
             + Send
             + Sync
             + 'static,
-        Args: SandboxFunctionArgs,
-        R: SandboxFunctionResult,
+        Args: SandboxFunctionArgs + 'static,
+        R: SandboxFunctionResult + 'static,
     {
         if self.forbidden_funcs.contains(&name) {
             let memory = self.memory.clone();
@@ -215,7 +214,9 @@ where
     }
 }
 
-impl<Ext: BackendExternalities> From<EnvBuilder<Ext>> for EnvironmentDefinitionBuilder {
+impl<Ext: BackendExternalities> From<EnvBuilder<Ext>>
+    for EnvironmentDefinitionBuilder<HostState<Ext>>
+{
     fn from(builder: EnvBuilder<Ext>) -> Self {
         builder.env_def_builder
     }
@@ -335,7 +336,6 @@ where
                 .chain(entry_forbidden)
                 .collect(),
             funcs_count: 0,
-            _ext: PhantomData,
         };
 
         Self::bind_funcs(&mut store, &mut builder);
@@ -349,7 +349,7 @@ where
             "Not all existing sys-calls were added to the module's env."
         );
 
-        let env_builder: EnvironmentDefinitionBuilder = builder.into();
+        let env_builder: EnvironmentDefinitionBuilder<HostState<EnvExt>> = builder.into();
         let instance = Instance::new(&mut store, binary, env_builder)
             .map_err(|e| Actor(ext.gas_amount(), format!("{e:?}")))?;
 

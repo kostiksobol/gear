@@ -41,6 +41,9 @@
 
 extern crate alloc;
 
+use alloc::string::String;
+
+#[cfg(feature = "std")]
 pub mod embedded_executor;
 pub use gear_sandbox_env as env;
 #[cfg(not(feature = "std"))]
@@ -321,7 +324,7 @@ impl_sandbox_function!(A, B, C, D, E, F, G, H);
 ///
 /// The sandboxed module can access only the entities which were defined and passed
 /// to the module at the instantiation time.
-pub trait SandboxEnvironmentBuilder<Memory>: Sized {
+pub trait SandboxEnvironmentBuilder<State, Memory>: Sized {
     /// Construct a new `EnvironmentDefinitionBuilder`.
     fn new() -> Self;
 
@@ -331,7 +334,7 @@ pub trait SandboxEnvironmentBuilder<Memory>: Sized {
     /// can import function passed here with any signature it wants. It can even import
     /// the same function (i.e. with same `module` and `field`) several times. It's up to
     /// the user code to check or constrain the types of signatures.
-    fn add_host_func<N1, N2, F, Args, R, State>(
+    fn add_host_func<N1, N2, F, Args, R>(
         &mut self,
         store: &mut default_executor::Store<State>,
         module: N1,
@@ -344,8 +347,8 @@ pub trait SandboxEnvironmentBuilder<Memory>: Sized {
             + Send
             + Sync
             + 'static,
-        Args: SandboxFunctionArgs,
-        R: SandboxFunctionResult;
+        Args: SandboxFunctionArgs + 'static,
+        R: SandboxFunctionResult + 'static;
 
     /// Register a memory in this environment definition.
     fn add_memory<N1, N2>(&mut self, module: N1, field: N2, mem: Memory)
@@ -364,7 +367,7 @@ pub trait SandboxInstance: Sized {
     type Memory: SandboxMemory<Self::State>;
 
     /// The environment builder used to construct this sandbox.
-    type EnvironmentBuilder: SandboxEnvironmentBuilder<Self::Memory>;
+    type EnvironmentBuilder: SandboxEnvironmentBuilder<Self::State, Self::Memory>;
 
     /// The globals type used for this sandbox to change globals.
     type InstanceGlobals: InstanceGlobals;

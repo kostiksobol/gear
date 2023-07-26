@@ -379,7 +379,7 @@ where
     pub fn add_memory(
         &self,
         store: &mut Store<()>,
-        env: &mut EnvironmentDefinitionBuilder,
+        env: &mut EnvironmentDefinitionBuilder<()>,
     ) -> Option<Memory> {
         let memory = if let Some(memory) = &self.memory {
             memory
