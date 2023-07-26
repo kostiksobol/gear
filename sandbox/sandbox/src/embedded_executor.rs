@@ -280,10 +280,14 @@ impl<T> super::SandboxInstance for Instance<T> {
                 .map_err(|_| Error::Module)?;
         }
 
-        let instance_pre = linker
-            .instantiate(&mut store, &module)
-            .map_err(|_| Error::Module)?;
-        let instance = instance_pre.start(&mut store).map_err(|_| Error::Module)?;
+        let instance_pre = linker.instantiate(&mut store, &module).map_err(|e| {
+            log::error!("Error instantiating module: {:?}", e);
+            Error::Module
+        })?;
+        let instance = instance_pre.start(&mut store).map_err(|e| {
+            log::error!("Error starting module: {:?}", e);
+            Error::Module
+        })?;
 
         Ok(Instance {
             instance,
