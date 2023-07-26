@@ -326,8 +326,11 @@ where
         let memory: DefaultExecutorMemory = SandboxMemory::new(&mut store, mem_size.raw(), None)
             .map_err(|e| System(CreateEnvMemory(e)))?;
 
+        let mut env_def_builder = EnvironmentDefinitionBuilder::new();
+        env_def_builder.add_memory("env", "memory", memory.clone());
+
         let mut builder = EnvBuilder {
-            env_def_builder: EnvironmentDefinitionBuilder::new(),
+            env_def_builder,
             memory: memory.clone(),
             forbidden_funcs: ext
                 .forbidden_funcs()
@@ -349,14 +352,23 @@ where
             "Not all existing sys-calls were added to the module's env."
         );
 
-        let env_builder: EnvironmentDefinitionBuilder<HostState<EnvExt>> = builder.into();
-        let instance = Instance::new(&mut store, binary, env_builder)
-            .map_err(|e| Actor(ext.gas_amount(), format!("{e:?}")))?;
-
         *store.data_mut() = Some(State {
             ext,
             termination_reason: ActorTerminationReason::Success.into(),
         });
+
+        let env_builder: EnvironmentDefinitionBuilder<HostState<EnvExt>> = builder.into();
+        let instance = Instance::new(&mut store, binary, env_builder).map_err(|e| {
+            Actor(
+                store
+                    .data_mut()
+                    .as_ref()
+                    .expect("set before")
+                    .ext
+                    .gas_amount(),
+                format!("{e:?}"),
+            )
+        })?;
 
         Ok(Self {
             instance,
