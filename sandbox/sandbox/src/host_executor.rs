@@ -19,8 +19,8 @@
 //! A WASM executor utilizing the sandbox runtime interface of the host.
 
 use crate::{
-    env, Error, ReturnValue, SandboxFunction, SandboxFunctionArgs, SandboxFunctionResult,
-    SandboxStore, Value, ValueType,
+    env, Error, GlobalsSetError, ReturnValue, SandboxFunction, SandboxFunctionArgs,
+    SandboxFunctionResult, SandboxStore, Value, ValueType,
 };
 use alloc::string::String;
 use codec::{Decode, Encode};
@@ -255,29 +255,6 @@ pub struct Instance<T> {
     _funcs: Vec<BoxedSandboxFunction<T>>,
 }
 
-#[derive(Clone, Default)]
-pub struct InstanceGlobals {
-    instance_idx: Option<u32>,
-}
-
-impl super::InstanceGlobals for InstanceGlobals {
-    fn get_global_val(&self, name: &str) -> Option<Value> {
-        self.instance_idx
-            .and_then(|i| sandbox::get_global_val(i, name))
-    }
-
-    fn set_global_val(&self, name: &str, value: Value) -> Result<(), super::GlobalsSetError> {
-        match self.instance_idx {
-            None => Err(super::GlobalsSetError::Other),
-            Some(i) => match sandbox::set_global_val(i, name, value) {
-                env::ERROR_GLOBALS_OK => Ok(()),
-                env::ERROR_GLOBALS_NOT_FOUND => Err(super::GlobalsSetError::NotFound),
-                _ => Err(super::GlobalsSetError::Other),
-            },
-        }
-    }
-}
-
 /// The primary responsibility of this thunk is to deserialize arguments and
 /// call the original function, specified by the index.
 extern "C" fn dispatch_thunk<T>(
@@ -325,7 +302,6 @@ impl<T> super::SandboxInstance for Instance<T> {
     type State = T;
     type Memory = Memory;
     type EnvironmentBuilder = EnvironmentDefinitionBuilder<T>;
-    type InstanceGlobals = InstanceGlobals;
 
     fn new(
         store: &mut Store<Self::State>,
@@ -392,10 +368,17 @@ impl<T> super::SandboxInstance for Instance<T> {
         sandbox::get_global_val(self.instance_idx, name)
     }
 
-    fn instance_globals(&self) -> Option<Self::InstanceGlobals> {
-        Some(InstanceGlobals {
-            instance_idx: Some(self.instance_idx),
-        })
+    fn set_global_val(
+        &self,
+        _store: &mut crate::default_executor::Store<Self::State>,
+        name: &str,
+        value: Value,
+    ) -> Result<(), GlobalsSetError> {
+        match sandbox::set_global_val(self.instance_idx, name, value) {
+            env::ERROR_GLOBALS_OK => Ok(()),
+            env::ERROR_GLOBALS_NOT_FOUND => Err(super::GlobalsSetError::NotFound),
+            _ => Err(super::GlobalsSetError::Other),
+        }
     }
 
     fn get_instance_ptr(&self) -> HostPointer {

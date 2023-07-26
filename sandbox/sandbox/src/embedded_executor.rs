@@ -19,8 +19,8 @@
 //! An embedded WASM executor utilizing `wasmi`.
 
 use crate::{
-    Error, HostError, ReturnValue, SandboxFunction, SandboxFunctionArgs, SandboxFunctionResult,
-    SandboxStore, Value, ValueType,
+    Error, GlobalsSetError, HostError, ReturnValue, SandboxFunction, SandboxFunctionArgs,
+    SandboxFunctionResult, SandboxStore, Value, ValueType,
 };
 use alloc::string::String;
 use sp_std::{collections::btree_map::BTreeMap, marker::PhantomData, prelude::*};
@@ -241,24 +241,10 @@ pub struct Instance<T> {
     _state: PhantomData<T>,
 }
 
-/// Unit-type as InstanceGlobals for wasmi executor.
-pub struct InstanceGlobals(());
-
-impl super::InstanceGlobals for InstanceGlobals {
-    fn get_global_val(&self, _name: &str) -> Option<Value> {
-        None
-    }
-
-    fn set_global_val(&self, _name: &str, _value: Value) -> Result<(), super::GlobalsSetError> {
-        Err(super::GlobalsSetError::NotFound)
-    }
-}
-
 impl<T> super::SandboxInstance for Instance<T> {
     type State = T;
     type Memory = Memory;
     type EnvironmentBuilder = EnvironmentDefinitionBuilder<T>;
-    type InstanceGlobals = InstanceGlobals;
 
     fn new(
         mut store: &mut Store<T>,
@@ -326,8 +312,20 @@ impl<T> super::SandboxInstance for Instance<T> {
         Some(to_interface(global))
     }
 
-    fn instance_globals(&self) -> Option<Self::InstanceGlobals> {
-        None
+    fn set_global_val(
+        &self,
+        store: &mut Store<Self::State>,
+        name: &str,
+        value: Value,
+    ) -> Result<(), GlobalsSetError> {
+        let global = self
+            .instance
+            .get_global(store.as_context(), name)
+            .ok_or(GlobalsSetError::NotFound)?;
+        global
+            .set(store.as_context_mut(), to_wasmi(value))
+            .map_err(|_| GlobalsSetError::Other)?;
+        Ok(())
     }
 
     fn get_instance_ptr(&self) -> HostPointer {

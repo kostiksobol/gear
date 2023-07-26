@@ -45,9 +45,8 @@ use gear_core::{
 };
 use gear_sandbox::{
     default_executor::{EnvironmentDefinitionBuilder, Instance, Memory as DefaultExecutorMemory},
-    HostError, InstanceGlobals, ReturnValue, SandboxEnvironmentBuilder, SandboxFunction,
-    SandboxFunctionArgs, SandboxFunctionResult, SandboxInstance, SandboxMemory, SandboxStore,
-    Value,
+    HostError, ReturnValue, SandboxEnvironmentBuilder, SandboxFunction, SandboxFunctionArgs,
+    SandboxFunctionResult, SandboxInstance, SandboxMemory, SandboxStore, Value,
 };
 use gear_wasm_instrument::{
     syscalls::SysCallName::{self, *},
@@ -151,8 +150,6 @@ macro_rules! wrap_common_func {
 pub enum SandboxEnvironmentError {
     #[display(fmt = "Failed to create env memory: {_0:?}")]
     CreateEnvMemory(gear_sandbox::Error),
-    #[display(fmt = "Globals are not supported")]
-    GlobalsNotSupported,
     #[display(fmt = "Gas counter not found or has wrong type")]
     WrongInjectedGas,
     #[display(fmt = "Allowance counter not found or has wrong type")]
@@ -407,10 +404,6 @@ where
             .and_then(|global| global.as_i32())
             .map(|global| global as u32);
 
-        let globals = instance
-            .instance_globals()
-            .ok_or(System(GlobalsNotSupported))?;
-
         let GasLeft { gas, allowance } = store
             .data_mut()
             .as_ref()
@@ -418,12 +411,16 @@ where
             .ext
             .gas_left();
 
-        globals
-            .set_global_val(GLOBAL_NAME_GAS, Value::I64(gas as i64))
+        instance
+            .set_global_val(&mut store, GLOBAL_NAME_GAS, Value::I64(gas as i64))
             .map_err(|_| System(WrongInjectedGas))?;
 
-        globals
-            .set_global_val(GLOBAL_NAME_ALLOWANCE, Value::I64(allowance as i64))
+        instance
+            .set_global_val(
+                &mut store,
+                GLOBAL_NAME_ALLOWANCE,
+                Value::I64(allowance as i64),
+            )
             .map_err(|_| System(WrongInjectedAllowance))?;
 
         let globals_config = if cfg!(not(feature = "std")) {
@@ -462,13 +459,13 @@ where
             .then(|| instance.invoke(&mut store, entry_point.as_entry(), &[]))
             .unwrap_or(Ok(ReturnValue::Unit));
 
-        let gas = globals
-            .get_global_val(GLOBAL_NAME_GAS)
+        let gas = instance
+            .get_global_val(&store, GLOBAL_NAME_GAS)
             .and_then(runtime::as_i64)
             .ok_or(System(WrongInjectedGas))?;
 
-        let allowance = globals
-            .get_global_val(GLOBAL_NAME_ALLOWANCE)
+        let allowance = instance
+            .get_global_val(&store, GLOBAL_NAME_ALLOWANCE)
             .and_then(runtime::as_i64)
             .ok_or(System(WrongInjectedAllowance))?;
 
