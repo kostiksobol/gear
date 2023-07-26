@@ -98,6 +98,12 @@ pub trait SandboxStore<T>: default_executor::SandboxStoreExt {
     fn data_mut(&mut self) -> &mut T;
 }
 
+pub trait SandboxCaller<T>: SandboxStore<T> {
+    fn set_global_val(&mut self, name: &str, value: Value) -> Option<()>;
+
+    fn get_global_val(&mut self, name: &str) -> Option<Value>;
+}
+
 /// Reference to a sandboxed linear memory, that
 /// will be used by the guest module.
 ///

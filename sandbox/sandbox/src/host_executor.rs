@@ -19,7 +19,7 @@
 //! A WASM executor utilizing the sandbox runtime interface of the host.
 
 use crate::{
-    env, Error, GlobalsSetError, ReturnValue, SandboxFunction, SandboxFunctionArgs,
+    env, Error, GlobalsSetError, ReturnValue, SandboxCaller, SandboxFunction, SandboxFunctionArgs,
     SandboxFunctionResult, SandboxStore, Value, ValueType,
 };
 use alloc::string::String;
@@ -52,7 +52,10 @@ impl<T> SandboxStore<T> for Store<T> {
 
 impl<T> SandboxStoreExt for Store<T> {}
 
-pub struct Caller<'a, T>(&'a mut T);
+pub struct Caller<'a, T> {
+    state: &'a T,
+    instance_idx: u32,
+}
 
 impl<T> SandboxStore<T> for Caller<'_, T> {
     fn data_mut(&mut self) -> &mut T {
@@ -61,6 +64,16 @@ impl<T> SandboxStore<T> for Caller<'_, T> {
 }
 
 impl<T> SandboxStoreExt for Caller<'_, T> {}
+
+impl<T> SandboxCaller<T> for Caller<'_, T> {
+    fn set_global_val(&mut self, name: &str, value: Value) -> Option<()> {
+        set_global_val(self.instance_idx, name, value).ok()
+    }
+
+    fn get_global_val(&mut self, name: &str) -> Option<Value> {
+        get_global_val(self.instance_idx, name)
+    }
+}
 
 struct MemoryHandle {
     memory_idx: u32,
@@ -365,7 +378,7 @@ impl<T> super::SandboxInstance for Instance<T> {
     }
 
     fn get_global_val(&self, _store: &Store<T>, name: &str) -> Option<Value> {
-        sandbox::get_global_val(self.instance_idx, name)
+        get_global_val(self.instance_idx, name)
     }
 
     fn set_global_val(
@@ -374,11 +387,7 @@ impl<T> super::SandboxInstance for Instance<T> {
         name: &str,
         value: Value,
     ) -> Result<(), GlobalsSetError> {
-        match sandbox::set_global_val(self.instance_idx, name, value) {
-            env::ERROR_GLOBALS_OK => Ok(()),
-            env::ERROR_GLOBALS_NOT_FOUND => Err(super::GlobalsSetError::NotFound),
-            _ => Err(super::GlobalsSetError::Other),
-        }
+        set_global_val(self.instance_idx, name, value)
     }
 
     fn get_instance_ptr(&self) -> HostPointer {
@@ -390,4 +399,16 @@ impl<T> Drop for Instance<T> {
     fn drop(&mut self) {
         sandbox::instance_teardown(self.instance_idx);
     }
+}
+
+fn set_global_val(instance_idx: u32, name: &str, value: Value) -> Result<(), GlobalsSetError> {
+    match sandbox::set_global_val(instance_idx, name, value) {
+        env::ERROR_GLOBALS_OK => Ok(()),
+        env::ERROR_GLOBALS_NOT_FOUND => Err(super::GlobalsSetError::NotFound),
+        _ => Err(super::GlobalsSetError::Other),
+    }
+}
+
+fn get_global_val(instance_idx: u32, name: &str) -> Option<Value> {
+    sandbox::get_global_val(instance_idx, name)
 }

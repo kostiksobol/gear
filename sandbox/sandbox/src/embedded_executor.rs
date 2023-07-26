@@ -19,8 +19,8 @@
 //! An embedded WASM executor utilizing `wasmi`.
 
 use crate::{
-    Error, GlobalsSetError, HostError, ReturnValue, SandboxFunction, SandboxFunctionArgs,
-    SandboxFunctionResult, SandboxStore, Value, ValueType,
+    Error, GlobalsSetError, HostError, ReturnValue, SandboxCaller, SandboxFunction,
+    SandboxFunctionArgs, SandboxFunctionResult, SandboxStore, Value, ValueType,
 };
 use alloc::string::String;
 use sp_std::{collections::btree_map::BTreeMap, marker::PhantomData, prelude::*};
@@ -71,14 +71,14 @@ impl<T> AsContextMut for Store<T> {
 
 pub struct Caller<'a, T>(wasmi::Caller<'a, T>);
 
-impl<'a, T> Caller<'a, T> {
-    pub fn set_global_val(&mut self, name: &str, value: Value) -> Option<()> {
+impl<'a, T> SandboxCaller<T> for Caller<'a, T> {
+    fn set_global_val(&mut self, name: &str, value: Value) -> Option<()> {
         let global = self.0.get_export(name)?.into_global()?;
         global.set(&mut self.0, to_wasmi(value)).ok()?;
         Some(())
     }
 
-    pub fn get_global_val(&mut self, name: &str) -> Option<Value> {
+    fn get_global_val(&mut self, name: &str) -> Option<Value> {
         let value = self.0.get_export(name)?.into_global()?.get(&self.0);
         Some(to_interface(value))
     }
