@@ -22,11 +22,11 @@ use crate::{
     env, Error, GlobalsSetError, ReturnValue, SandboxCaller, SandboxFunction, SandboxFunctionArgs,
     SandboxFunctionResult, SandboxStore, Value, ValueType,
 };
-use alloc::string::String;
+use alloc::{string::String, sync::Arc};
 use codec::{Decode, Encode};
 use gear_runtime_interface::sandbox;
 use gear_sandbox_env::HostError;
-use sp_std::{marker::PhantomData, mem, prelude::*, rc::Rc, slice, vec};
+use sp_std::{marker::PhantomData, mem, prelude::*, slice, vec};
 use sp_wasm_interface::HostPointer;
 
 impl SandboxFunctionResult for ReturnValue {
@@ -44,6 +44,12 @@ pub trait SandboxStoreExt {}
 
 pub struct Store<T>(T);
 
+impl<T> Store<T> {
+    pub fn new(state: T) -> Self {
+        Self(state)
+    }
+}
+
 impl<T> SandboxStore<T> for Store<T> {
     fn data_mut(&mut self) -> &mut T {
         &mut self.0
@@ -53,13 +59,13 @@ impl<T> SandboxStore<T> for Store<T> {
 impl<T> SandboxStoreExt for Store<T> {}
 
 pub struct Caller<'a, T> {
-    state: &'a T,
+    state: &'a mut T,
     instance_idx: u32,
 }
 
 impl<T> SandboxStore<T> for Caller<'_, T> {
     fn data_mut(&mut self) -> &mut T {
-        self.0
+        self.state
     }
 }
 
@@ -90,7 +96,7 @@ impl Drop for MemoryHandle {
 pub struct Memory {
     // Handle to memory instance is wrapped to add reference-counting semantics
     // to `Memory`.
-    handle: Rc<MemoryHandle>,
+    handle: Arc<MemoryHandle>,
 }
 
 impl<T> super::SandboxMemory<T> for Memory {
@@ -104,7 +110,7 @@ impl<T> super::SandboxMemory<T> for Memory {
         match sandbox::memory_new(initial, maximum) {
             env::ERR_MODULE => Err(Error::Module),
             memory_idx => Ok(Memory {
-                handle: Rc::new(MemoryHandle { memory_idx }),
+                handle: Arc::new(MemoryHandle { memory_idx }),
             }),
         }
     }
@@ -268,12 +274,31 @@ pub struct Instance<T> {
     _funcs: Vec<BoxedSandboxFunction<T>>,
 }
 
+#[repr(C)]
+struct DispatchThunkState {
+    instance_idx: u32,
+    state: u32,
+}
+
+impl DispatchThunkState {
+    unsafe fn caller<T>(&self) -> Caller<'_, T> {
+        let instance_idx = self.instance_idx;
+        // # Safety:
+        // this should be safe since mutable reference to T is passed upon the invocation.
+        let state = &mut *(self.state as usize as *mut T);
+        Caller {
+            state,
+            instance_idx,
+        }
+    }
+}
+
 /// The primary responsibility of this thunk is to deserialize arguments and
 /// call the original function, specified by the index.
 extern "C" fn dispatch_thunk<T>(
     serialized_args_ptr: *const u8,
     serialized_args_len: usize,
-    state: usize,
+    state: *mut DispatchThunkState,
     f: usize,
 ) -> u64 {
     let serialized_args = unsafe {
@@ -290,17 +315,17 @@ extern "C" fn dispatch_thunk<T>(
     );
 
     unsafe {
-        // This should be safe since `coerce_host_index_to_func` is called with an argument
+        // This should be safe since it is called with an argument
         // received in an `dispatch_thunk` implementation, so `f` should point
         // on a valid host function.
         let f = f as *const BoxedSandboxFunction<T>;
         let f = f.as_ref().expect("infallible");
 
-        // This should be safe since mutable reference to T is passed upon the invocation.
-        let state = &mut *(state as *mut T);
+        let state = &mut *state;
+        let caller = state.caller::<T>();
 
         // Pass control flow to the designated function.
-        let result = f.call(Caller(state), &args).encode();
+        let result = f.call(caller, &args).encode();
 
         // Leak the result vector and return the pointer to return data.
         let result_ptr = result.as_ptr() as u64;
@@ -357,13 +382,18 @@ impl<T> super::SandboxInstance for Instance<T> {
         let serialized_args = args.to_vec().encode();
         let mut return_val = vec![0u8; ReturnValue::ENCODED_MAX_SIZE];
 
+        let mut state = DispatchThunkState {
+            instance_idx: self.instance_idx,
+            state: store.data_mut() as *mut T as u32,
+        };
+
         let result = sandbox::invoke(
             self.instance_idx,
             name,
             &serialized_args,
             return_val.as_mut_ptr() as _,
             return_val.len() as u32,
-            store.data_mut() as *const T as _,
+            &mut state as *mut DispatchThunkState as *mut u8,
         );
 
         match result {
