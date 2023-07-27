@@ -54,8 +54,6 @@ pub enum MemoryAccessError {
     Memory(MemoryError),
     ProcessAccess(ProcessAccessError),
     RuntimeBuffer(RuntimeBufferSizeError),
-    // TODO: remove #2164
-    Decode,
 }
 
 impl BackendSyscallError for MemoryAccessError {
@@ -80,7 +78,6 @@ impl BackendSyscallError for MemoryAccessError {
             MemoryAccessError::ProcessAccess(ProcessAccessError::GasAllowanceExceeded) => {
                 ActorTerminationReason::GasAllowanceExceeded
             }
-            MemoryAccessError::Decode => unreachable!(),
         }
         .into()
     }
@@ -292,7 +289,7 @@ impl<Ext: BackendExternalities> MemoryAccessManager<Ext> {
             self.read_into_buf(memory, read.ptr, &mut buff, gas_left)?;
             buff
         };
-        let decoded = T::decode_all(&mut &buff[..]).map_err(|_| MemoryAccessError::Decode)?;
+        let decoded = T::decode_all(&mut &buff[..]).expect("Can't decode buffer");
         Ok(decoded)
     }
 
