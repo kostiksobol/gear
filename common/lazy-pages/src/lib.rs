@@ -184,7 +184,9 @@ pub fn pre_process_memory_accesses(
         gas_left.allowance,
     );
     *gas_left = gas_left_new;
-    if let Err(err) = res {
+
+    // if result can be converted to `ProcessAccessError` then it's an error
+    if let Ok(err) = ProcessAccessError::try_from(res) {
         return Err(err);
     }
     Ok(())

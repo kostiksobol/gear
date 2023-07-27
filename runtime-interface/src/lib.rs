@@ -101,7 +101,7 @@ pub trait GearRI {
         writes: &[u8],
         gas_left: u64,
         gas_allowance: u64,
-    ) -> (GasLeft, Result<(), ProcessAccessError>) {
+    ) -> (GasLeft, u8) {
         let reads_len = reads.len();
         let writes_len = writes.len();
         assert!(reads_len % 8 == 0);
@@ -114,11 +114,14 @@ pub trait GearRI {
             gas: gas_left,
             allowance: gas_allowance,
         };
-        let res = lazy_pages::pre_process_memory_accesses(
+        let res = match lazy_pages::pre_process_memory_accesses(
             &reads_intervals,
             &writes_intervals,
             &mut gas_left,
-        );
+        ) {
+            Ok(_) => 0,
+            Err(err) => err.into(),
+        };
         (gas_left, res)
     }
 
