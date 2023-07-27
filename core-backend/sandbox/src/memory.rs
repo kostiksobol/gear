@@ -18,19 +18,22 @@
 
 //! sp-sandbox extensions for memory.
 
-use crate::state::{Caller, Store};
+use gear_backend_common::state::HostState;
 use gear_core::{
     env::Externalities,
     memory::{HostPointer, Memory, MemoryError},
     pages::{PageNumber, PageU32Size, WasmPage},
 };
-use gear_sandbox::SandboxMemory;
+use gear_sandbox::{
+    default_executor::{Caller, Store},
+    SandboxMemory,
+};
 
 pub type DefaultExecutorMemory = gear_sandbox::default_executor::Memory;
 
 pub(crate) struct MemoryWrapRef<'a, 'b: 'a, Ext: Externalities + 'static> {
     pub memory: DefaultExecutorMemory,
-    pub caller: &'a mut Caller<'b, Ext>,
+    pub caller: &'a mut Caller<'b, HostState<Ext>>,
 }
 
 impl<Ext: Externalities + 'static> Memory for MemoryWrapRef<'_, '_, Ext> {
@@ -68,7 +71,7 @@ where
     Ext: Externalities + 'static,
 {
     pub(crate) memory: DefaultExecutorMemory,
-    pub(crate) store: Store<Ext>,
+    pub(crate) store: Store<HostState<Ext>>,
 }
 
 impl<Ext> MemoryWrap<Ext>
@@ -76,11 +79,11 @@ where
     Ext: Externalities + 'static,
 {
     /// Wrap [`wasmi::Memory`] for Memory trait.
-    pub fn new(memory: DefaultExecutorMemory, store: Store<Ext>) -> Self {
+    pub fn new(memory: DefaultExecutorMemory, store: Store<HostState<Ext>>) -> Self {
         MemoryWrap { memory, store }
     }
 
-    pub(crate) fn into_store(self) -> Store<Ext> {
+    pub(crate) fn into_store(self) -> Store<HostState<Ext>> {
         self.store
     }
 }
@@ -122,8 +125,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::State;
-    use gear_backend_common::{assert_err, assert_ok, mock::MockExt, ActorTerminationReason};
+    use gear_backend_common::{
+        assert_err, assert_ok, mock::MockExt, state::State, ActorTerminationReason,
+    };
     use gear_core::memory::{AllocError, AllocationsContext, NoopGrowHandler};
 
     fn new_test_memory(

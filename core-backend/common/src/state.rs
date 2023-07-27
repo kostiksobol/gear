@@ -1,7 +1,7 @@
 // This file is part of Gear.
 
-// Copyright (C) 2022-2023 Gear Technologies Inc.
-// SPDX-License-Identifier: GPL-3.0-or-lat&er WITH Classpath-exception-2.0
+// Copyright (C) 2023 Gear Technologies Inc.
+// SPDX-License-Identifier: GPL-3.0-or-later WITH Classpath-exception-2.0
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -16,14 +16,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use gear_backend_common::{
-    BackendExternalities, BackendState, BackendTermination, TerminationReason,
-};
+use crate::{BackendExternalities, BackendState, BackendTermination, TerminationReason};
 
-pub(crate) type HostState<Ext> = Option<State<Ext>>;
+pub type HostState<Ext> = Option<State<Ext>>;
 
 /// It's supposed that `E` implements [BackendExt]
-pub(crate) struct State<Ext> {
+pub struct State<Ext> {
     pub ext: Ext,
     pub termination_reason: TerminationReason,
 }

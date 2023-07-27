@@ -18,12 +18,7 @@
 
 //! sp-sandbox environment for running a module.
 
-use crate::{
-    runtime,
-    runtime::CallerWrap,
-    state::{Caller, HostState, State, Store},
-    MemoryWrap,
-};
+use crate::{runtime, runtime::CallerWrap, MemoryWrap};
 use alloc::{collections::BTreeSet, format};
 use core::{
     convert::Infallible,
@@ -34,6 +29,7 @@ use gear_backend_common::{
     funcs::FuncsHandler,
     lazy_pages::{GlobalsAccessConfig, GlobalsAccessMod},
     runtime::RunFallibleError,
+    state::{HostState, State},
     ActorTerminationReason, BackendAllocSyscallError, BackendExternalities, BackendReport,
     BackendSyscallError, BackendTermination, Environment, EnvironmentError,
     EnvironmentExecutionResult,
@@ -44,7 +40,9 @@ use gear_core::{
     pages::{PageNumber, WasmPage},
 };
 use gear_sandbox::{
-    default_executor::{EnvironmentDefinitionBuilder, Instance, Memory as DefaultExecutorMemory},
+    default_executor::{
+        Caller, EnvironmentDefinitionBuilder, Instance, Memory as DefaultExecutorMemory, Store,
+    },
     HostError, ReturnValue, SandboxEnvironmentBuilder, SandboxFunction, SandboxFunctionArgs,
     SandboxFunctionResult, SandboxInstance, SandboxMemory, SandboxStore, Value,
 };
@@ -102,7 +100,7 @@ impl TryFrom<SandboxValue> for u64 {
 macro_rules! wrap_common_func_internal_ret {
     ($func:path, $($arg_name:ident),*) => {
         move |memory: DefaultExecutorMemory| {
-            move |caller: Caller<'_, Ext>, $($arg_name,)*| -> Result<_, HostError>
+            move |caller: Caller<'_, HostState<Ext>>, $($arg_name,)*| -> Result<_, HostError>
             {
                 let mut ctx = CallerWrap::prepare(caller, memory.clone())?;
                 $func(&mut ctx, $($arg_name,)*)
@@ -114,7 +112,7 @@ macro_rules! wrap_common_func_internal_ret {
 macro_rules! wrap_common_func_internal_no_ret {
     ($func:path, $($arg_name:ident),*) => {
         move |memory: DefaultExecutorMemory| {
-            move |caller: Caller<'_, Ext>, $($arg_name,)*| -> Result<(), HostError>
+            move |caller: Caller<'_, HostState<Ext>>, $($arg_name,)*| -> Result<(), HostError>
             {
                 let mut ctx = CallerWrap::prepare(caller, memory.clone())?;
                 $func(&mut ctx, $($arg_name,)*)
@@ -165,7 +163,7 @@ where
     instance: Instance<HostState<Ext>>,
     entries: BTreeSet<DispatchKind>,
     entry_point: EntryPoint,
-    store: Store<Ext>,
+    store: Store<HostState<Ext>>,
     memory: DefaultExecutorMemory,
 }
 
@@ -185,9 +183,9 @@ where
     RunFallibleError: From<Ext::FallibleError>,
     Ext::AllocError: BackendAllocSyscallError<ExtError = Ext::UnrecoverableError>,
 {
-    fn add_func<F, Args, R>(&mut self, store: &mut Store<Ext>, name: SysCallName, f: F)
+    fn add_func<F, Args, R>(&mut self, store: &mut Store<HostState<Ext>>, name: SysCallName, f: F)
     where
-        F: for<'a> SandboxFunction<Caller<'a, Ext>, Args, R, HostState<Ext>>
+        F: for<'a> SandboxFunction<Caller<'a, HostState<Ext>>, Args, R, HostState<Ext>>
             + Send
             + Sync
             + 'static,
@@ -228,7 +226,7 @@ where
     EntryPoint: WasmEntryPoint,
 {
     #[rustfmt::skip]
-    fn bind_funcs(store: &mut Store<Ext>, builder: &mut EnvBuilder<Ext>) {
+    fn bind_funcs(store: &mut Store<HostState<Ext>>, builder: &mut EnvBuilder<Ext>) {
         let memory = builder.memory.clone();
         builder.add_func(store, BlockHeight, wrap_common_func!(FuncsHandler::block_height, (1) -> ())(memory.clone()));
         builder.add_func(store, BlockTimestamp,wrap_common_func!(FuncsHandler::block_timestamp, (1) -> ())(memory.clone()));

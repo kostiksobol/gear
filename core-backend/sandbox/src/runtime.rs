@@ -18,11 +18,7 @@
 
 //! sp-sandbox runtime (here it's contract execution state) realization.
 
-use crate::{
-    memory::MemoryWrapRef,
-    state::{Caller, State},
-    DefaultExecutorMemory,
-};
+use crate::{memory::MemoryWrapRef, DefaultExecutorMemory};
 use alloc::vec::Vec;
 use codec::{Decode, MaxEncodedLen};
 use gear_backend_common::{
@@ -31,10 +27,11 @@ use gear_backend_common::{
         WasmMemoryReadAs, WasmMemoryReadDecoded, WasmMemoryWrite, WasmMemoryWriteAs,
     },
     runtime::{RunFallibleError, Runtime as CommonRuntime},
+    state::{HostState, State},
     BackendExternalities, BackendState, TerminationReason,
 };
 use gear_core::{costs::RuntimeCosts, gas::GasLeft, pages::WasmPage};
-use gear_sandbox::{HostError, SandboxCaller, SandboxStore, Value};
+use gear_sandbox::{default_executor::Caller, HostError, SandboxCaller, SandboxStore, Value};
 use gear_wasm_instrument::{GLOBAL_NAME_ALLOWANCE, GLOBAL_NAME_GAS};
 
 pub(crate) fn as_i64(v: Value) -> Option<i64> {
@@ -44,7 +41,7 @@ pub(crate) fn as_i64(v: Value) -> Option<i64> {
     }
 }
 
-pub(crate) fn caller_host_state_take<Ext>(caller: &mut Caller<'_, Ext>) -> State<Ext> {
+pub(crate) fn caller_host_state_take<Ext>(caller: &mut Caller<'_, HostState<Ext>>) -> State<Ext> {
     caller
         .data_mut()
         .take()
@@ -52,7 +49,7 @@ pub(crate) fn caller_host_state_take<Ext>(caller: &mut Caller<'_, Ext>) -> State
 }
 
 pub(crate) struct CallerWrap<'a, Ext> {
-    pub caller: Caller<'a, Ext>,
+    pub caller: Caller<'a, HostState<Ext>>,
     pub manager: MemoryAccessManager<Ext>,
     pub memory: DefaultExecutorMemory,
 }
@@ -113,7 +110,7 @@ impl<'a, Ext: BackendExternalities + 'static> CommonRuntime<Ext> for CallerWrap<
 impl<'a, Ext: BackendExternalities + 'static> CallerWrap<'a, Ext> {
     #[track_caller]
     pub fn prepare(
-        caller: Caller<'a, Ext>,
+        caller: Caller<'a, HostState<Ext>>,
         memory: DefaultExecutorMemory,
     ) -> Result<Self, HostError> {
         let mut wrapper = Self {
@@ -149,7 +146,7 @@ impl<'a, Ext: BackendExternalities + 'static> CallerWrap<'a, Ext> {
 
     #[track_caller]
     pub fn memory<'b, 'c: 'b>(
-        caller: &'b mut Caller<'c, Ext>,
+        caller: &'b mut Caller<'c, HostState<Ext>>,
         memory: DefaultExecutorMemory,
     ) -> MemoryWrapRef<'b, 'c, Ext> {
         MemoryWrapRef::<'b, 'c, _> { memory, caller }
