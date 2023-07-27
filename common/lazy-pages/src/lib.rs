@@ -160,13 +160,32 @@ pub fn get_status() -> Status {
     gear_ri::lazy_pages_status().0
 }
 
+fn serialize_mem_intervals(intervals: &[MemoryInterval]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(intervals.len() * 8);
+    for interval in intervals {
+        bytes.extend_from_slice(&interval.to_bytes());
+    }
+    bytes
+}
+
 /// Pre-process memory access in syscalls in lazy-pages.
 pub fn pre_process_memory_accesses(
     reads: &[MemoryInterval],
     writes: &[MemoryInterval],
     gas_left: &mut GasLeft,
 ) -> Result<(), ProcessAccessError> {
-    let (gas_left_new, res) = gear_ri::pre_process_memory_accesses(reads, writes, (*gas_left,));
+    let serialized_reads = serialize_mem_intervals(reads);
+    let serialized_writes = serialize_mem_intervals(writes);
+
+    let (gas_left_new, res) = gear_ri::pre_process_memory_accesses(
+        &serialized_reads,
+        &serialized_writes,
+        gas_left.gas,
+        gas_left.allowance,
+    );
     *gas_left = gas_left_new;
-    res
+    if let Err(err) = res {
+        return Err(err);
+    }
+    Ok(())
 }
