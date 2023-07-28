@@ -22,11 +22,11 @@ use crate::{
     env, AsContext, Error, GlobalsSetError, ReturnValue, SandboxCaller, SandboxFunction,
     SandboxFunctionArgs, SandboxFunctionResult, SandboxStore, Value, ValueType,
 };
-use alloc::{string::String, sync::Arc};
+use alloc::{collections::LinkedList, string::String, sync::Arc};
 use codec::{Decode, Encode};
 use gear_runtime_interface::sandbox;
 use gear_sandbox_env::HostError;
-use sp_std::{marker::PhantomData, mem, prelude::*, slice, vec};
+use sp_std::{marker::PhantomData, mem, prelude::*, ptr::NonNull, slice, vec};
 use sp_wasm_interface::HostPointer;
 
 impl SandboxFunctionResult for ReturnValue {
@@ -179,7 +179,9 @@ type BoxedSandboxFunction<T> =
 /// A builder for the environment of the sandboxed WASM module.
 pub struct EnvironmentDefinitionBuilder<T> {
     env_def: env::EnvironmentDefinition,
-    funcs: Vec<BoxedSandboxFunction<T>>,
+    // use linked list to avoid elements reallocation and be sure
+    // we point to correct location
+    funcs: LinkedList<BoxedSandboxFunction<T>>,
     retained_memories: Vec<Memory>,
 }
 
@@ -204,7 +206,7 @@ impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBui
             env_def: env::EnvironmentDefinition {
                 entries: Vec::new(),
             },
-            funcs: Vec::new(),
+            funcs: LinkedList::new(),
             retained_memories: Vec::new(),
         }
     }
@@ -248,8 +250,10 @@ impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBui
             _args: PhantomData,
             _r: PhantomData,
         }) as BoxedSandboxFunction<T>;
-        self.funcs.push(f);
-        let f = self.funcs.last().expect("infallible") as *const BoxedSandboxFunction<T>;
+        self.funcs.push_back(f);
+        // we don't point to box content because it's a fat pointer (64 bits)
+        // when sandbox runtime interface waits for 32 bits argument
+        let f = self.funcs.back().expect("infallible") as *const BoxedSandboxFunction<T>;
         let f = env::ExternEntity::Function(f as u32);
         self.add_entry(module, field, f);
     }
@@ -271,18 +275,21 @@ impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBui
 pub struct Instance<T> {
     instance_idx: u32,
     _retained_memories: Vec<Memory>,
-    _funcs: Vec<BoxedSandboxFunction<T>>,
+    _funcs: LinkedList<BoxedSandboxFunction<T>>,
 }
 
 #[repr(C)]
 struct DispatchThunkState {
-    instance_idx: u32,
+    instance_idx: Option<u32>,
     state: u32,
 }
 
 impl DispatchThunkState {
     unsafe fn caller<T>(&self) -> Caller<'_, T> {
-        let instance_idx = self.instance_idx;
+        let instance_idx = self
+            .instance_idx
+            .clone()
+            .expect("dispatch_thunk must not be used during instantiation");
         // # Safety:
         // this should be safe since mutable reference to T is passed upon the invocation.
         let state = &mut *(self.state as usize as *mut T);
@@ -298,8 +305,8 @@ impl DispatchThunkState {
 extern "C" fn dispatch_thunk<T>(
     serialized_args_ptr: *const u8,
     serialized_args_len: usize,
-    state: *mut DispatchThunkState,
-    f: usize,
+    mut state: NonNull<DispatchThunkState>,
+    f: NonNull<BoxedSandboxFunction<T>>,
 ) -> u64 {
     let serialized_args = unsafe {
         if serialized_args_len == 0 {
@@ -318,11 +325,9 @@ extern "C" fn dispatch_thunk<T>(
         // This should be safe since it is called with an argument
         // received in an `dispatch_thunk` implementation, so `f` should point
         // on a valid host function.
-        let f = f as *const BoxedSandboxFunction<T>;
-        let f = f.as_ref().expect("infallible");
+        let f = f.as_ref();
 
-        let state = &mut *state;
-        let caller = state.caller::<T>();
+        let caller = state.as_mut().caller::<T>();
 
         // Pass control flow to the designated function.
         let result = f.call(caller, &args).encode();
@@ -349,11 +354,17 @@ impl<T> super::SandboxInstance for Instance<T> {
         let serialized_env_def: Vec<u8> = env_def_builder.env_def.encode();
         // It's very important to instantiate thunk with the right type.
         let dispatch_thunk = dispatch_thunk::<T>;
+
+        let mut state = DispatchThunkState {
+            instance_idx: None,
+            state: store.data_mut() as *mut T as u32,
+        };
+
         let result = sandbox::instantiate(
             dispatch_thunk as usize as u32,
             code,
             &serialized_env_def,
-            store.data_mut() as *const T as _,
+            &mut state as *mut DispatchThunkState as *mut u8,
         );
 
         let instance_idx = match result {
@@ -383,7 +394,7 @@ impl<T> super::SandboxInstance for Instance<T> {
         let mut return_val = vec![0u8; ReturnValue::ENCODED_MAX_SIZE];
 
         let mut state = DispatchThunkState {
-            instance_idx: self.instance_idx,
+            instance_idx: Some(self.instance_idx),
             state: store.data_mut() as *mut T as u32,
         };
 
