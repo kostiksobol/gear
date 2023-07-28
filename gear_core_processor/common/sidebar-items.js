@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ActorExecutionErrorReplyReason","DispatchOutcome","DispatchResultKind","ExecutionError","JournalNote","SystemExecutionError"],"struct":["Actor","ActorExecutionError","DispatchResult","ExecutableActorData","PrechargedDispatch","WasmExecutionContext"],"trait":["JournalHandler"]};
