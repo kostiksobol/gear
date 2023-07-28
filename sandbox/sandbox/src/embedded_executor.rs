@@ -359,7 +359,9 @@ fn to_interface(value: RuntimeValue) -> Value {
         RuntimeValue::I64(val) => Value::I64(val),
         RuntimeValue::F32(val) => Value::F32(val.into()),
         RuntimeValue::F64(val) => Value::F64(val.into()),
-        RuntimeValue::FuncRef(_) | RuntimeValue::ExternRef(_) => todo!(),
+        RuntimeValue::FuncRef(_) | RuntimeValue::ExternRef(_) => {
+            unreachable!("gear-sandbox must not work with function and extern references")
+        }
     }
 }
 

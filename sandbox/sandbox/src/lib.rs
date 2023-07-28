@@ -172,7 +172,6 @@ impl SandboxFunctionArg for i32 {
     const VALUE_TYPE: ValueType = ValueType::I32;
 
     fn from_value(value: Value) -> Result<Self, HostError> {
-        // TODO: print error
         value.as_i32().ok_or(HostError)
     }
 }
@@ -281,7 +280,7 @@ where
     R: SandboxFunctionResult,
 {
     fn call(&self, store: S, args: &[Value]) -> Result<R, HostError> {
-        let _args: [Value; 0] = args.try_into().unwrap(); // TODO
+        let _args: [Value; 0] = args.try_into().ok_or(HostError)?;
         (self)(store)
     }
 }
@@ -302,7 +301,7 @@ macro_rules! impl_sandbox_function {
             fn call(&self, store: Store, args: &[Value]) -> Result<Ret, HostError> {
                 const ARGS_SIZE: usize = impl_sandbox_function!(@count $($generic),+);
 
-                let args: [Value; ARGS_SIZE] = args.try_into().unwrap(); // TODO
+                let args: [Value; ARGS_SIZE] = args.try_into().ok_or(HostError)?;
                 let [$($generic),+] = args;
                 $(
                     let $generic = $generic::from_value($generic)?;
