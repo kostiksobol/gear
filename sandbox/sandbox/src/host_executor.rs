@@ -19,8 +19,8 @@
 //! A WASM executor utilizing the sandbox runtime interface of the host.
 
 use crate::{
-    env, Error, GlobalsSetError, ReturnValue, SandboxCaller, SandboxFunction, SandboxFunctionArgs,
-    SandboxFunctionResult, SandboxStore, Value, ValueType,
+    env, AsContext, Error, GlobalsSetError, ReturnValue, SandboxCaller, SandboxFunction,
+    SandboxFunctionArgs, SandboxFunctionResult, SandboxStore, Value, ValueType,
 };
 use alloc::{string::String, sync::Arc};
 use codec::{Decode, Encode};
@@ -40,36 +40,28 @@ impl SandboxFunctionResult for ReturnValue {
     }
 }
 
-pub trait SandboxStoreExt {}
+pub trait AsContextExt {}
 
 pub struct Store<T>(T);
 
-impl<T> Store<T> {
-    pub fn new(state: T) -> Self {
+impl<T> SandboxStore<T> for Store<T> {
+    fn new(state: T) -> Self {
         Self(state)
     }
 }
 
-impl<T> SandboxStore<T> for Store<T> {
+impl<T> AsContext<T> for Store<T> {
     fn data_mut(&mut self) -> &mut T {
         &mut self.0
     }
 }
 
-impl<T> SandboxStoreExt for Store<T> {}
+impl<T> AsContextExt for Store<T> {}
 
 pub struct Caller<'a, T> {
     state: &'a mut T,
     instance_idx: u32,
 }
-
-impl<T> SandboxStore<T> for Caller<'_, T> {
-    fn data_mut(&mut self) -> &mut T {
-        self.state
-    }
-}
-
-impl<T> SandboxStoreExt for Caller<'_, T> {}
 
 impl<T> SandboxCaller<T> for Caller<'_, T> {
     fn set_global_val(&mut self, name: &str, value: Value) -> Option<()> {
@@ -80,6 +72,14 @@ impl<T> SandboxCaller<T> for Caller<'_, T> {
         get_global_val(self.instance_idx, name)
     }
 }
+
+impl<T> AsContext<T> for Caller<'_, T> {
+    fn data_mut(&mut self) -> &mut T {
+        self.state
+    }
+}
+
+impl<T> AsContextExt for Caller<'_, T> {}
 
 struct MemoryHandle {
     memory_idx: u32,
@@ -115,9 +115,9 @@ impl<T> super::SandboxMemory<T> for Memory {
         }
     }
 
-    fn get<S>(&self, _store: &S, offset: u32, buf: &mut [u8]) -> Result<(), Error>
+    fn get<C>(&self, _ctx: &C, offset: u32, buf: &mut [u8]) -> Result<(), Error>
     where
-        S: SandboxStore<T>,
+        C: AsContext<T>,
     {
         let result = sandbox::memory_get(
             self.handle.memory_idx,
@@ -132,9 +132,9 @@ impl<T> super::SandboxMemory<T> for Memory {
         }
     }
 
-    fn set<S>(&self, _store: &mut S, offset: u32, val: &[u8]) -> Result<(), Error>
+    fn set<C>(&self, _ctx: &mut C, offset: u32, val: &[u8]) -> Result<(), Error>
     where
-        S: SandboxStore<T>,
+        C: AsContext<T>,
     {
         let result = sandbox::memory_set(
             self.handle.memory_idx,
@@ -149,25 +149,25 @@ impl<T> super::SandboxMemory<T> for Memory {
         }
     }
 
-    fn grow<S>(&self, store: &mut S, pages: u32) -> Result<u32, Error>
+    fn grow<C>(&self, ctx: &mut C, pages: u32) -> Result<u32, Error>
     where
-        S: SandboxStore<T>,
+        C: AsContext<T>,
     {
-        let size = self.size(store);
+        let size = self.size(ctx);
         sandbox::memory_grow(self.handle.memory_idx, pages);
         Ok(size)
     }
 
-    fn size<S>(&self, _store: &S) -> u32
+    fn size<C>(&self, _ctx: &C) -> u32
     where
-        S: SandboxStore<T>,
+        C: AsContext<T>,
     {
         sandbox::memory_size(self.handle.memory_idx)
     }
 
-    unsafe fn get_buff<S>(&self, _store: &mut S) -> HostPointer
+    unsafe fn get_buff<C>(&self, _ctx: &mut C) -> HostPointer
     where
-        S: SandboxStore<T>,
+        C: AsContext<T>,
     {
         sandbox::get_buff(self.handle.memory_idx)
     }

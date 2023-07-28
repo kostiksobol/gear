@@ -27,7 +27,7 @@ use super::{
 use common::Origin;
 use gear_sandbox::{
     default_executor::{EnvironmentDefinitionBuilder, Instance, Memory, Store},
-    SandboxEnvironmentBuilder, SandboxInstance,
+    SandboxEnvironmentBuilder, SandboxInstance, SandboxStore,
 };
 
 /// Minimal execution environment without any exported functions.

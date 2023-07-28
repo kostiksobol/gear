@@ -43,8 +43,9 @@ use gear_sandbox::{
     default_executor::{
         Caller, EnvironmentDefinitionBuilder, Instance, Memory as DefaultExecutorMemory, Store,
     },
-    HostError, ReturnValue, SandboxEnvironmentBuilder, SandboxFunction, SandboxFunctionArgs,
-    SandboxFunctionResult, SandboxInstance, SandboxMemory, SandboxStore, Value,
+    AsContext, HostError, ReturnValue, SandboxEnvironmentBuilder, SandboxFunction,
+    SandboxFunctionArgs, SandboxFunctionResult, SandboxInstance, SandboxMemory, SandboxStore,
+    Value,
 };
 use gear_wasm_instrument::{
     syscalls::SysCallName::{self, *},

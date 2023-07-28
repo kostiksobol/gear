@@ -31,7 +31,7 @@ use gear_backend_common::{
     BackendExternalities, BackendState, TerminationReason,
 };
 use gear_core::{costs::RuntimeCosts, gas::GasLeft, pages::WasmPage};
-use gear_sandbox::{default_executor::Caller, HostError, SandboxCaller, SandboxStore, Value};
+use gear_sandbox::{default_executor::Caller, AsContext, HostError, SandboxCaller, Value};
 use gear_wasm_instrument::{GLOBAL_NAME_ALLOWANCE, GLOBAL_NAME_GAS};
 
 pub(crate) fn as_i64(v: Value) -> Option<i64> {

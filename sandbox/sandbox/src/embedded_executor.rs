@@ -19,7 +19,7 @@
 //! An embedded WASM executor utilizing `wasmi`.
 
 use crate::{
-    Error, GlobalsSetError, HostError, ReturnValue, SandboxCaller, SandboxFunction,
+    AsContext, Error, GlobalsSetError, HostError, ReturnValue, SandboxCaller, SandboxFunction,
     SandboxFunctionArgs, SandboxFunctionResult, SandboxStore, Value, ValueType,
 };
 use alloc::string::String;
@@ -27,35 +27,35 @@ use sp_std::{collections::btree_map::BTreeMap, marker::PhantomData, prelude::*};
 use sp_wasm_interface::HostPointer;
 use wasmi::{
     core::{Pages, Trap, ValueType as RuntimeValueType},
-    AsContext, AsContextMut, Engine, ExternRef, Func, FuncType, Linker, MemoryType, Module,
-    StoreContext, StoreContextMut, Value as RuntimeValue,
+    AsContext as _, AsContextMut as _, Engine, ExternRef, Func, FuncType, Linker, MemoryType,
+    Module, StoreContext, StoreContextMut, Value as RuntimeValue,
 };
 
-pub trait SandboxStoreExt: AsContext + AsContextMut {}
+pub trait AsContextExt: wasmi::AsContext + wasmi::AsContextMut {}
 
 pub struct Store<T>(wasmi::Store<T>);
 
 impl<T> Store<T> {
-    pub fn new(data: T) -> Self {
-        let engine = Engine::default();
-        let store = wasmi::Store::new(&engine, data);
-        Self(store)
-    }
-
     fn engine(&self) -> &Engine {
         self.0.engine()
     }
 }
 
 impl<T> SandboxStore<T> for Store<T> {
+    fn new(data: T) -> Self {
+        let engine = Engine::default();
+        let store = wasmi::Store::new(&engine, data);
+        Self(store)
+    }
+}
+
+impl<T> AsContext<T> for Store<T> {
     fn data_mut(&mut self) -> &mut T {
         self.0.data_mut()
     }
 }
 
-impl<T> SandboxStoreExt for Store<T> {}
-
-impl<T> AsContext for Store<T> {
+impl<T> wasmi::AsContext for Store<T> {
     type UserState = T;
 
     fn as_context(&self) -> StoreContext<Self::UserState> {
@@ -63,11 +63,13 @@ impl<T> AsContext for Store<T> {
     }
 }
 
-impl<T> AsContextMut for Store<T> {
+impl<T> wasmi::AsContextMut for Store<T> {
     fn as_context_mut(&mut self) -> StoreContextMut<Self::UserState> {
         self.0.as_context_mut()
     }
 }
+
+impl<T> AsContextExt for Store<T> {}
 
 pub struct Caller<'a, T>(wasmi::Caller<'a, T>);
 
@@ -84,15 +86,13 @@ impl<'a, T> SandboxCaller<T> for Caller<'a, T> {
     }
 }
 
-impl<T> SandboxStore<T> for Caller<'_, T> {
+impl<T> AsContext<T> for Caller<'_, T> {
     fn data_mut(&mut self) -> &mut T {
         self.0.data_mut()
     }
 }
 
-impl<T> SandboxStoreExt for Caller<'_, T> {}
-
-impl<T> AsContext for Caller<'_, T> {
+impl<T> wasmi::AsContext for Caller<'_, T> {
     type UserState = T;
 
     fn as_context(&self) -> StoreContext<Self::UserState> {
@@ -100,11 +100,13 @@ impl<T> AsContext for Caller<'_, T> {
     }
 }
 
-impl<T> AsContextMut for Caller<'_, T> {
+impl<T> wasmi::AsContextMut for Caller<'_, T> {
     fn as_context_mut(&mut self) -> StoreContextMut<Self::UserState> {
         self.0.as_context_mut()
     }
 }
+
+impl<T> AsContextExt for Caller<'_, T> {}
 
 /// The linear memory used by the sandbox.
 #[derive(Clone)]
@@ -119,55 +121,55 @@ impl<T> super::SandboxMemory<T> for Memory {
         Ok(Memory { memref })
     }
 
-    fn get<S>(&self, store: &S, ptr: u32, buf: &mut [u8]) -> Result<(), Error>
+    fn get<C>(&self, ctx: &C, ptr: u32, buf: &mut [u8]) -> Result<(), Error>
     where
-        S: SandboxStore<T>,
+        C: AsContext<T>,
     {
         let data = self
             .memref
-            .data(store)
+            .data(ctx)
             .get((ptr as usize)..(ptr as usize + buf.len()))
             .ok_or(Error::OutOfBounds)?;
         buf[..].copy_from_slice(data);
         Ok(())
     }
 
-    fn set<S>(&self, store: &mut S, ptr: u32, value: &[u8]) -> Result<(), Error>
+    fn set<C>(&self, ctx: &mut C, ptr: u32, value: &[u8]) -> Result<(), Error>
     where
-        S: SandboxStore<T>,
+        C: AsContext<T>,
     {
         let data = self
             .memref
-            .data_mut(store)
+            .data_mut(ctx)
             .get_mut((ptr as usize)..(ptr as usize + value.len()))
             .ok_or(Error::OutOfBounds)?;
         data[..].copy_from_slice(value);
         Ok(())
     }
 
-    fn grow<S>(&self, store: &mut S, pages: u32) -> Result<u32, Error>
+    fn grow<C>(&self, ctx: &mut C, pages: u32) -> Result<u32, Error>
     where
-        S: SandboxStore<T>,
+        C: AsContext<T>,
     {
         let pages = Pages::new(pages).ok_or(Error::MemoryGrow)?;
         self.memref
-            .grow(store, pages)
+            .grow(ctx, pages)
             .map(Into::into)
             .map_err(|_| Error::MemoryGrow)
     }
 
-    fn size<S>(&self, store: &S) -> u32
+    fn size<C>(&self, ctx: &C) -> u32
     where
-        S: SandboxStore<T>,
+        C: AsContext<T>,
     {
-        self.memref.current_pages(store).into()
+        self.memref.current_pages(ctx).into()
     }
 
-    unsafe fn get_buff<S>(&self, store: &mut S) -> u64
+    unsafe fn get_buff<C>(&self, ctx: &mut C) -> u64
     where
-        S: SandboxStore<T>,
+        C: AsContext<T>,
     {
-        self.memref.data_mut(store).as_mut_ptr() as usize as u64
+        self.memref.data_mut(ctx).as_mut_ptr() as usize as u64
     }
 }
 
@@ -370,8 +372,8 @@ mod tests {
     use super::{EnvironmentDefinitionBuilder, Instance};
     use crate::{
         default_executor::{Caller, Store},
-        Error, HostError, ReturnValue, SandboxEnvironmentBuilder, SandboxInstance, SandboxStore,
-        Value,
+        AsContext, Error, HostError, ReturnValue, SandboxEnvironmentBuilder, SandboxInstance,
+        SandboxStore, Value,
     };
 
     fn execute_sandboxed(code: &[u8], args: &[Value]) -> Result<ReturnValue, Error> {

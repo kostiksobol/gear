@@ -95,7 +95,7 @@ use gear_core::{
     reservation::GasReserver,
 };
 use gear_core_errors::*;
-use gear_sandbox::{default_executor::Store, SandboxMemory};
+use gear_sandbox::{default_executor::Store, SandboxMemory, SandboxStore};
 use gear_wasm_instrument::{
     parity_wasm::elements::{BlockType, BrTableData, Instruction, SignExtInstruction, ValueType},
     syscalls::SysCallName,

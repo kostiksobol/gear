@@ -94,14 +94,19 @@ impl From<Error> for HostError {
 /// [`EnvironmentDefinitionBuilder`]: struct.EnvironmentDefinitionBuilder.html
 pub type HostFuncType<T> = fn(&mut T, &[Value]) -> Result<ReturnValue, HostError>;
 
-pub trait SandboxStore<T>: default_executor::SandboxStoreExt {
-    fn data_mut(&mut self) -> &mut T;
+pub trait SandboxStore<T>: AsContext<T> {
+    fn new(state: T) -> Self;
 }
 
-pub trait SandboxCaller<T>: SandboxStore<T> {
+pub trait SandboxCaller<T>: AsContext<T> {
     fn set_global_val(&mut self, name: &str, value: Value) -> Option<()>;
 
+    // TODO: fix mutability
     fn get_global_val(&mut self, name: &str) -> Option<Value>;
+}
+
+pub trait AsContext<T>: default_executor::AsContextExt {
+    fn data_mut(&mut self) -> &mut T;
 }
 
 /// Reference to a sandboxed linear memory, that
@@ -129,37 +134,37 @@ pub trait SandboxMemory<T>: Sized + Clone {
     /// Read a memory area at the address `ptr` with the size of the provided slice `buf`.
     ///
     /// Returns `Err` if the range is out-of-bounds.
-    fn get<S>(&self, store: &S, ptr: u32, buf: &mut [u8]) -> Result<(), Error>
+    fn get<C>(&self, ctx: &C, ptr: u32, buf: &mut [u8]) -> Result<(), Error>
     where
-        S: SandboxStore<T>;
+        C: AsContext<T>;
 
     /// Write a memory area at the address `ptr` with contents of the provided slice `buf`.
     ///
     /// Returns `Err` if the range is out-of-bounds.
-    fn set<S>(&self, store: &mut S, ptr: u32, value: &[u8]) -> Result<(), Error>
+    fn set<C>(&self, ctx: &mut C, ptr: u32, value: &[u8]) -> Result<(), Error>
     where
-        S: SandboxStore<T>;
+        C: AsContext<T>;
 
     /// Grow memory with provided number of pages.
     ///
     /// Returns `Err` if attempted to allocate more memory than permitted by the limit.
-    fn grow<S>(&self, store: &mut S, pages: u32) -> Result<u32, Error>
+    fn grow<C>(&self, ctx: &mut C, pages: u32) -> Result<u32, Error>
     where
-        S: SandboxStore<T>;
+        C: AsContext<T>;
 
     /// Returns current memory size.
     ///
     /// Maximum memory size cannot exceed 65536 pages or 4GiB.
-    fn size<S>(&self, store: &S) -> u32
+    fn size<C>(&self, ctx: &C) -> u32
     where
-        S: SandboxStore<T>;
+        C: AsContext<T>;
 
     /// Returns pointer to the begin of wasm mem buffer
     /// # Safety
     /// Pointer is intended to use by `mprotect` function.
-    unsafe fn get_buff<S>(&self, store: &mut S) -> HostPointer
+    unsafe fn get_buff<C>(&self, ctx: &mut C) -> HostPointer
     where
-        S: SandboxStore<T>;
+        C: AsContext<T>;
 }
 
 pub trait SandboxFunctionArg: Sized {
@@ -269,44 +274,44 @@ impl SandboxFunctionResult for u32 {
     }
 }
 
-pub trait SandboxFunction<Store, Args, R, Data> {
-    fn call(&self, store: Store, args: &[Value]) -> Result<R, HostError>;
+pub trait SandboxFunction<Context, Args, R, Data> {
+    fn call(&self, ctx: Context, args: &[Value]) -> Result<R, HostError>;
 }
 
 impl<S, F, R, D> SandboxFunction<S, (), R, D> for F
 where
     F: Fn(S) -> Result<R, HostError>,
-    S: SandboxStore<D>,
+    S: AsContext<D>,
     R: SandboxFunctionResult,
 {
-    fn call(&self, store: S, args: &[Value]) -> Result<R, HostError> {
-        let _args: [Value; 0] = args.try_into().ok_or(HostError)?;
-        (self)(store)
+    fn call(&self, ctx: S, args: &[Value]) -> Result<R, HostError> {
+        let _args: [Value; 0] = args.try_into().map_err(|_| HostError)?;
+        (self)(ctx)
     }
 }
 
 #[macro_export(local_inner_macros)]
 macro_rules! impl_sandbox_function {
     ($($generic:ident),+) => {
-        impl<Store, Func, Ret, Data, $($generic),+> SandboxFunction<Store, ($($generic,)+), Ret, Data> for Func
+        impl<Context, Func, Ret, Data, $($generic),+> SandboxFunction<Context, ($($generic,)+), Ret, Data> for Func
         where
-            Func: Fn(Store, $($generic),+) -> Result<Ret, HostError>,
-            Store: SandboxStore<Data>,
+            Func: Fn(Context, $($generic),+) -> Result<Ret, HostError>,
+            Context: AsContext<Data>,
             Ret: SandboxFunctionResult,
             $(
                 $generic: SandboxFunctionArg,
             )+
         {
             #[allow(non_snake_case)]
-            fn call(&self, store: Store, args: &[Value]) -> Result<Ret, HostError> {
+            fn call(&self, ctx: Context, args: &[Value]) -> Result<Ret, HostError> {
                 const ARGS_SIZE: usize = impl_sandbox_function!(@count $($generic),+);
 
-                let args: [Value; ARGS_SIZE] = args.try_into().ok_or(HostError)?;
+                let args: [Value; ARGS_SIZE] = args.try_into().map_err(|_| HostError)?;
                 let [$($generic),+] = args;
                 $(
                     let $generic = $generic::from_value($generic)?;
                 )+
-                (self)(store, $($generic),+)
+                (self)(ctx, $($generic),+)
             }
         }
     };

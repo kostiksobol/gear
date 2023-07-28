@@ -129,6 +129,7 @@ mod tests {
         assert_err, assert_ok, mock::MockExt, state::State, ActorTerminationReason,
     };
     use gear_core::memory::{AllocError, AllocationsContext, NoopGrowHandler};
+    use gear_sandbox::SandboxStore;
 
     fn new_test_memory(
         static_pages: u16,
