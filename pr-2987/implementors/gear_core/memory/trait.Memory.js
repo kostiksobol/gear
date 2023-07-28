@@ -1,0 +1,3 @@
+(function() {var implementors = {
+"gear_backend_sandbox":[["impl&lt;Ext&gt; Memory for <a class=\"struct\" href=\"gear_backend_sandbox/memory/struct.MemoryWrap.html\" title=\"struct gear_backend_sandbox::memory::MemoryWrap\">MemoryWrap</a>&lt;Ext&gt;<span class=\"where fmt-newline\">where\n    Ext: Externalities + 'static,</span>"]]
+};if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()
