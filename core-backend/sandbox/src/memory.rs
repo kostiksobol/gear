@@ -65,7 +65,7 @@ impl<Ext: Externalities + 'static> Memory for MemoryWrapRef<'_, '_, Ext> {
     }
 }
 
-/// Wrapper for [`wasmi::Memory`].
+/// Wrapper for [`DefaultExecutorMemory`].
 pub struct MemoryWrap<Ext>
 where
     Ext: Externalities + 'static,
@@ -78,7 +78,7 @@ impl<Ext> MemoryWrap<Ext>
 where
     Ext: Externalities + 'static,
 {
-    /// Wrap [`wasmi::Memory`] for Memory trait.
+    /// Wrap [`DefaultExecutorMemory`] for Memory trait.
     pub fn new(memory: DefaultExecutorMemory, store: Store<HostState<Ext>>) -> Self {
         MemoryWrap { memory, store }
     }
