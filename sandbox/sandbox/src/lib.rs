@@ -61,9 +61,6 @@ pub use self::env::HostError;
 #[cfg(not(feature = "std"))]
 pub use self::host_executor as default_executor;
 
-/// The target used for logging.
-const TARGET: &str = "runtime::sandbox";
-
 /// Error that can occur while using this crate.
 #[derive(RuntimeDebug)]
 pub enum Error {
