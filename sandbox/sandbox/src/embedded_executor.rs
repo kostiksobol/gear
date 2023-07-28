@@ -20,7 +20,7 @@
 
 use crate::{
     AsContext, Error, GlobalsSetError, HostError, ReturnValue, SandboxCaller, SandboxFunction,
-    SandboxFunctionArgs, SandboxFunctionResult, SandboxStore, Value, ValueType,
+    SandboxFunctionResult, SandboxStore, Value, ValueType,
 };
 use alloc::string::String;
 use sp_std::{collections::btree_map::BTreeMap, marker::PhantomData, prelude::*};
@@ -205,10 +205,9 @@ impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBui
         N1: Into<String>,
         N2: Into<String>,
         F: for<'a> SandboxFunction<Caller<'a, T>, Args, R, T> + Send + Sync + 'static,
-        Args: SandboxFunctionArgs,
         R: SandboxFunctionResult,
     {
-        let params = Args::params().iter().copied().map(to_wasmi_type);
+        let params = F::params().iter().copied().map(to_wasmi_type);
         let result = R::result().map(to_wasmi_type);
         let ty = FuncType::new(params, result);
         let func = Func::new(store, ty, move |caller, args, results| {

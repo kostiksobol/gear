@@ -206,46 +206,6 @@ impl SandboxFunctionArg for u64 {
     }
 }
 
-/// Sandbox function arguments.
-pub trait SandboxFunctionArgs {
-    /// Return sequence of params.
-    fn params() -> &'static [ValueType];
-}
-
-impl SandboxFunctionArgs for () {
-    fn params() -> &'static [ValueType] {
-        &[]
-    }
-}
-
-macro_rules! impl_sandbox_function_args {
-    ($($generic:ident),+) => {
-        impl<$($generic),+> SandboxFunctionArgs for ($($generic,)+)
-        where
-            $(
-                $generic: SandboxFunctionArg,
-            )+
-        {
-            fn params() -> &'static [ValueType] {
-                &[
-                    $(
-                        $generic::VALUE_TYPE,
-                    )+
-                ]
-            }
-        }
-    };
-}
-
-impl_sandbox_function_args!(A);
-impl_sandbox_function_args!(A, B);
-impl_sandbox_function_args!(A, B, C);
-impl_sandbox_function_args!(A, B, C, D);
-impl_sandbox_function_args!(A, B, C, D, E);
-impl_sandbox_function_args!(A, B, C, D, E, F);
-impl_sandbox_function_args!(A, B, C, D, E, F, G);
-impl_sandbox_function_args!(A, B, C, D, E, F, G, H);
-
 /// Sandbox function results.
 pub trait SandboxFunctionResult {
     /// Return result value type.
@@ -287,6 +247,11 @@ impl SandboxFunctionResult for u32 {
 
 /// Sandbox function.
 pub trait SandboxFunction<Context, Args, R, Data> {
+    /// Return sequence of function params.
+    fn params() -> &'static [ValueType]
+    where
+        Self: Sized;
+
     /// Call function.
     fn call(&self, ctx: Context, args: &[Value]) -> Result<R, HostError>;
 }
@@ -297,6 +262,10 @@ where
     S: AsContext<D>,
     R: SandboxFunctionResult,
 {
+    fn params() -> &'static [ValueType] {
+        &[]
+    }
+
     fn call(&self, ctx: S, args: &[Value]) -> Result<R, HostError> {
         let _args: [Value; 0] = args.try_into().map_err(|_| HostError)?;
         (self)(ctx)
@@ -314,6 +283,14 @@ macro_rules! impl_sandbox_function {
                 $generic: SandboxFunctionArg,
             )+
         {
+            fn params() -> &'static [ValueType] {
+                &[
+                    $(
+                        $generic::VALUE_TYPE,
+                    )+
+                ]
+            }
+
             #[allow(non_snake_case)]
             fn call(&self, ctx: Context, args: &[Value]) -> Result<Ret, HostError> {
                 const ARGS_SIZE: usize = impl_sandbox_function!(@count $($generic),+);
@@ -369,7 +346,7 @@ pub trait SandboxEnvironmentBuilder<State, Memory>: Sized {
             + Send
             + Sync
             + 'static,
-        Args: SandboxFunctionArgs + 'static,
+        Args: 'static,
         R: SandboxFunctionResult + 'static;
 
     /// Register a memory in this environment definition.

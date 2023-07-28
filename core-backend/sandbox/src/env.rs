@@ -44,8 +44,7 @@ use gear_sandbox::{
         Caller, EnvironmentDefinitionBuilder, Instance, Memory as DefaultExecutorMemory, Store,
     },
     AsContext, HostError, ReturnValue, SandboxEnvironmentBuilder, SandboxFunction,
-    SandboxFunctionArgs, SandboxFunctionResult, SandboxInstance, SandboxMemory, SandboxStore,
-    Value,
+    SandboxFunctionResult, SandboxInstance, SandboxMemory, SandboxStore, Value,
 };
 use gear_wasm_instrument::{
     syscalls::SysCallName::{self, *},
@@ -190,7 +189,7 @@ where
             + Send
             + Sync
             + 'static,
-        Args: SandboxFunctionArgs + 'static,
+        Args: 'static,
         R: SandboxFunctionResult + 'static,
     {
         if self.forbidden_funcs.contains(&name) {

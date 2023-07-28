@@ -20,7 +20,7 @@
 
 use crate::{
     env, AsContext, Error, GlobalsSetError, ReturnValue, SandboxCaller, SandboxFunction,
-    SandboxFunctionArgs, SandboxFunctionResult, SandboxStore, Value, ValueType,
+    SandboxFunctionResult, SandboxStore, Value, ValueType,
 };
 use alloc::{collections::LinkedList, string::String, sync::Arc};
 use codec::{Decode, Encode};
@@ -224,7 +224,7 @@ impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBui
         N1: Into<String>,
         N2: Into<String>,
         F: for<'a> SandboxFunction<Caller<'a, T>, Args, R, T> + Send + Sync + 'static,
-        Args: SandboxFunctionArgs + 'static,
+        Args: 'static,
         R: SandboxFunctionResult + 'static,
     {
         struct Converter<F, Args, R> {
@@ -239,6 +239,13 @@ impl<T> super::SandboxEnvironmentBuilder<T, Memory> for EnvironmentDefinitionBui
             F: for<'a> SandboxFunction<Caller<'a, State>, Args, R, State>,
             R: SandboxFunctionResult + 'static,
         {
+            fn params() -> &'static [ValueType]
+            where
+                Self: Sized,
+            {
+                F::params()
+            }
+
             fn call(
                 &self,
                 store: Caller<'_, State>,
