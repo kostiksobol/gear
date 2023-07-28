@@ -119,7 +119,7 @@ impl<'a, Ext: BackendExternalities + 'static> CallerWrap<'a, Ext> {
             memory,
         };
 
-        let mut f = || {
+        let f = || {
             let gas = wrapper.caller.get_global_val(GLOBAL_NAME_GAS)?;
             let Value::I64(gas) = gas else { return None };
             let allowance = wrapper.caller.get_global_val(GLOBAL_NAME_ALLOWANCE)?;

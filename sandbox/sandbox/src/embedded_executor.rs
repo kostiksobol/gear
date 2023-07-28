@@ -80,7 +80,7 @@ impl<'a, T> SandboxCaller<T> for Caller<'a, T> {
         Some(())
     }
 
-    fn get_global_val(&mut self, name: &str) -> Option<Value> {
+    fn get_global_val(&self, name: &str) -> Option<Value> {
         let value = self.0.get_export(name)?.into_global()?.get(&self.0);
         Some(to_interface(value))
     }

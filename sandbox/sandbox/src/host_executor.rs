@@ -68,7 +68,7 @@ impl<T> SandboxCaller<T> for Caller<'_, T> {
         set_global_val(self.instance_idx, name, value).ok()
     }
 
-    fn get_global_val(&mut self, name: &str) -> Option<Value> {
+    fn get_global_val(&self, name: &str) -> Option<Value> {
         get_global_val(self.instance_idx, name)
     }
 }

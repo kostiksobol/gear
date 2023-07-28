@@ -101,8 +101,7 @@ pub trait SandboxStore<T>: AsContext<T> {
 pub trait SandboxCaller<T>: AsContext<T> {
     fn set_global_val(&mut self, name: &str, value: Value) -> Option<()>;
 
-    // TODO: fix mutability
-    fn get_global_val(&mut self, name: &str) -> Option<Value>;
+    fn get_global_val(&self, name: &str) -> Option<Value>;
 }
 
 pub trait AsContext<T>: default_executor::AsContextExt {
