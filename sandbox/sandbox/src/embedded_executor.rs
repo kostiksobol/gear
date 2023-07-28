@@ -31,8 +31,10 @@ use wasmi::{
     Module, StoreContext, StoreContextMut, Value as RuntimeValue,
 };
 
+/// wasmi [`AsContext`] extension.
 pub trait AsContextExt: wasmi::AsContext + wasmi::AsContextMut {}
 
+/// wasmi store.
 pub struct Store<T>(wasmi::Store<T>);
 
 impl<T> Store<T> {
@@ -71,6 +73,7 @@ impl<T> wasmi::AsContextMut for Store<T> {
 
 impl<T> AsContextExt for Store<T> {}
 
+/// wasmi caller.
 pub struct Caller<'a, T>(wasmi::Caller<'a, T>);
 
 impl<'a, T> SandboxCaller<T> for Caller<'a, T> {

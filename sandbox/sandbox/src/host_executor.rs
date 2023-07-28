@@ -40,8 +40,10 @@ impl SandboxFunctionResult for ReturnValue {
     }
 }
 
+/// Dummy context.
 pub trait AsContextExt {}
 
+/// Host store.
 pub struct Store<T>(T);
 
 impl<T> SandboxStore<T> for Store<T> {
@@ -58,6 +60,7 @@ impl<T> AsContext<T> for Store<T> {
 
 impl<T> AsContextExt for Store<T> {}
 
+/// Host caller.
 pub struct Caller<'a, T> {
     state: &'a mut T,
     instance_idx: u32,

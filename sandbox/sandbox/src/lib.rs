@@ -91,17 +91,24 @@ impl From<Error> for HostError {
 /// [`EnvironmentDefinitionBuilder`]: struct.EnvironmentDefinitionBuilder.html
 pub type HostFuncType<T> = fn(&mut T, &[Value]) -> Result<ReturnValue, HostError>;
 
+/// Sandbox store.
 pub trait SandboxStore<T>: AsContext<T> {
+    /// Create a new sandbox store.
     fn new(state: T) -> Self;
 }
 
+/// Sandbox caller.
 pub trait SandboxCaller<T>: AsContext<T> {
+    /// Set WASM global.
     fn set_global_val(&mut self, name: &str, value: Value) -> Option<()>;
 
+    /// Get WASM global.
     fn get_global_val(&self, name: &str) -> Option<Value>;
 }
 
+/// Sandbox context.
 pub trait AsContext<T>: default_executor::AsContextExt {
+    /// Return mutable reference to state.
     fn data_mut(&mut self) -> &mut T;
 }
 
@@ -163,9 +170,12 @@ pub trait SandboxMemory<T>: Sized + Clone {
         C: AsContext<T>;
 }
 
+/// Sandbox function argument.
 pub trait SandboxFunctionArg: Sized {
+    /// Argument value type.
     const VALUE_TYPE: ValueType;
 
+    /// Create argument from value.
     fn from_value(value: Value) -> Result<Self, HostError>;
 }
 
@@ -196,7 +206,9 @@ impl SandboxFunctionArg for u64 {
     }
 }
 
+/// Sandbox function arguments.
 pub trait SandboxFunctionArgs {
+    /// Return sequence of params.
     fn params() -> &'static [ValueType];
 }
 
@@ -234,9 +246,12 @@ impl_sandbox_function_args!(A, B, C, D, E, F);
 impl_sandbox_function_args!(A, B, C, D, E, F, G);
 impl_sandbox_function_args!(A, B, C, D, E, F, G, H);
 
+/// Sandbox function results.
 pub trait SandboxFunctionResult {
+    /// Return result value type.
     fn result() -> Option<ValueType>;
 
+    /// Convert result into return value.
     fn into_return_value(self) -> ReturnValue;
 }
 
@@ -270,7 +285,9 @@ impl SandboxFunctionResult for u32 {
     }
 }
 
+/// Sandbox function.
 pub trait SandboxFunction<Context, Args, R, Data> {
+    /// Call function.
     fn call(&self, ctx: Context, args: &[Value]) -> Result<R, HostError>;
 }
 
@@ -286,7 +303,6 @@ where
     }
 }
 
-#[macro_export(local_inner_macros)]
 macro_rules! impl_sandbox_function {
     ($($generic:ident),+) => {
         impl<Context, Func, Ret, Data, $($generic),+> SandboxFunction<Context, ($($generic,)+), Ret, Data> for Func
@@ -367,6 +383,7 @@ pub trait SandboxEnvironmentBuilder<State, Memory>: Sized {
 ///
 /// This instance can be used for invoking exported functions.
 pub trait SandboxInstance: Sized {
+    /// The environment state.
     type State;
 
     /// The memory type used for this sandbox.
