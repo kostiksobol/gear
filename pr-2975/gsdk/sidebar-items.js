@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["config","events","ext","gp","metadata","result","signer","testing","types"],"struct":["Api","Value"],"type":["BlockNumber"]};
