@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MAX_WASM_PAGE_COUNT","STATE_EXPORTS"],"enum":["CodeError"],"struct":["Code","CodeAndId","InstrumentedCode","InstrumentedCodeAndId"]};
