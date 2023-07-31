@@ -70,14 +70,14 @@
     <span class="kw">pub </span>termination_reason: TerminationReason,
 }
 
-<span class="kw">impl</span>&lt;Ext: BackendExternalities&gt; BackendTermination&lt;Ext, ()&gt; <span class="kw">for </span>State&lt;Ext&gt; {
-    <span class="kw">fn </span>into_parts(<span class="self">self</span>) -&gt; (Ext, (), TerminationReason) {
+<span class="kw">impl</span>&lt;Ext: BackendExternalities&gt; BackendTermination&lt;Ext&gt; <span class="kw">for </span>State&lt;Ext&gt; {
+    <span class="kw">fn </span>into_parts(<span class="self">self</span>) -&gt; (Ext, TerminationReason) {
         <span class="kw">let </span>State {
             ext,
             termination_reason,
             ..
         } = <span class="self">self</span>;
-        (ext, (), termination_reason)
+        (ext, termination_reason)
     }
 }
 

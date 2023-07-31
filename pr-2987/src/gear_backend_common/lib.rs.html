@@ -951,10 +951,10 @@
 /// Backend termination aims to return to the caller gear wasm program
 /// execution outcome, which is the state of externalities, memory and
 /// termination reason.
-</span><span class="kw">pub trait </span>BackendTermination&lt;Ext: BackendExternalities, EnvMem: Sized&gt;: Sized {
+</span><span class="kw">pub trait </span>BackendTermination&lt;Ext: BackendExternalities&gt;: Sized {
     <span class="doccomment">/// Transforms [`Self`] into tuple of externalities, memory and
     /// termination reason returned after the execution.
-    </span><span class="kw">fn </span>into_parts(<span class="self">self</span>) -&gt; (Ext, EnvMem, TerminationReason);
+    </span><span class="kw">fn </span>into_parts(<span class="self">self</span>) -&gt; (Ext, TerminationReason);
 
     <span class="doccomment">/// Terminates backend work after execution.
     ///
@@ -976,10 +976,10 @@
         res: <span class="prelude-ty">Result</span>&lt;T, WasmCallErr&gt;,
         gas: i64,
         allowance: i64,
-    ) -&gt; (Ext, EnvMem, TerminationReason) {
+    ) -&gt; (Ext, TerminationReason) {
         <span class="macro">log::trace!</span>(<span class="string">&quot;Execution result = {res:?}&quot;</span>);
 
-        <span class="kw">let </span>(<span class="kw-2">mut </span>ext, memory, termination_reason) = <span class="self">self</span>.into_parts();
+        <span class="kw">let </span>(<span class="kw-2">mut </span>ext, termination_reason) = <span class="self">self</span>.into_parts();
 
         ext.set_gas_left((gas, allowance).into());
 
@@ -1003,7 +1003,7 @@
             </span>)
         };
 
-        (ext, memory, termination_reason)
+        (ext, termination_reason)
     }
 }
 
