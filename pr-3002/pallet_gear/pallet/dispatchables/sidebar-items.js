@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["claim_value","create_program","pay_program_rent","resume_session_commit","resume_session_init","resume_session_push","run","send_message","send_message_with_voucher","send_reply","send_reply_with_voucher","set_execute_inherent","upload_code","upload_program"]};
