@@ -414,6 +414,7 @@
 <a href="#414" id="414">414</a>
 <a href="#415" id="415">415</a>
 <a href="#416" id="416">416</a>
+<a href="#417" id="417">417</a>
 </pre></div><pre class="rust"><code><span class="comment">// This file is part of Gear.
 
 // Copyright (C) 2021-2023 Gear Technologies Inc.
@@ -485,7 +486,8 @@
         );
     }
 
-    <span class="kw">fn </span>remove_message&lt;T: Into&lt;Log&gt;&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, log: T) -&gt; StoredMessage {
+    <span class="attr">#[track_caller]
+    </span><span class="kw">fn </span>remove_message&lt;T: Into&lt;Log&gt;&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, log: T) -&gt; StoredMessage {
         <span class="kw">let </span>log = log.into();
         <span class="kw">let </span><span class="kw-2">mut </span>manager = <span class="self">self</span>.manager.borrow_mut();
         <span class="kw">let </span>messages = manager

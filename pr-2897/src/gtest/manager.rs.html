@@ -1140,6 +1140,24 @@
 <a href="#1140" id="1140">1140</a>
 <a href="#1141" id="1141">1141</a>
 <a href="#1142" id="1142">1142</a>
+<a href="#1143" id="1143">1143</a>
+<a href="#1144" id="1144">1144</a>
+<a href="#1145" id="1145">1145</a>
+<a href="#1146" id="1146">1146</a>
+<a href="#1147" id="1147">1147</a>
+<a href="#1148" id="1148">1148</a>
+<a href="#1149" id="1149">1149</a>
+<a href="#1150" id="1150">1150</a>
+<a href="#1151" id="1151">1151</a>
+<a href="#1152" id="1152">1152</a>
+<a href="#1153" id="1153">1153</a>
+<a href="#1154" id="1154">1154</a>
+<a href="#1155" id="1155">1155</a>
+<a href="#1156" id="1156">1156</a>
+<a href="#1157" id="1157">1157</a>
+<a href="#1158" id="1158">1158</a>
+<a href="#1159" id="1159">1159</a>
+<a href="#1160" id="1160">1160</a>
 </pre></div><pre class="rust"><code><span class="comment">// This file is part of Gear.
 
 // Copyright (C) 2021-2023 Gear Technologies Inc.
@@ -1213,6 +1231,7 @@
 
     <span class="comment">// # Panics
     // If actor is initialized or dormant
+    </span><span class="attr">#[track_caller]
     </span><span class="kw">fn </span>set_initialized(<span class="kw-2">&amp;mut </span><span class="self">self</span>) {
         <span class="macro">assert!</span>(
             <span class="self">self</span>.is_uninitialized(),
@@ -1371,7 +1390,8 @@
 }
 
 <span class="kw">impl </span>ExtManager {
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new() -&gt; <span class="self">Self </span>{
+    <span class="attr">#[track_caller]
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>new() -&gt; <span class="self">Self </span>{
         <span class="self">Self </span>{
             msg_nonce: <span class="number">1</span>,
             id_nonce: <span class="number">1</span>,
@@ -1465,7 +1485,8 @@
         }
     }
 
-    <span class="kw">fn </span>validate_dispatch(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dispatch: <span class="kw-2">&amp;</span>Dispatch) {
+    <span class="attr">#[track_caller]
+    </span><span class="kw">fn </span>validate_dispatch(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dispatch: <span class="kw-2">&amp;</span>Dispatch) {
         <span class="kw">if </span><span class="number">0 </span>&lt; dispatch.value() &amp;&amp; dispatch.value() &lt; <span class="kw">crate</span>::EXISTENTIAL_DEPOSIT {
             <span class="macro">panic!</span>(
                 <span class="string">&quot;Value greater than 0, but less than \
@@ -1504,7 +1525,8 @@
         <span class="self">self</span>.run_dispatch(dispatch)
     }
 
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>run_dispatch(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dispatch: Dispatch) -&gt; RunResult {
+    <span class="attr">#[track_caller]
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>run_dispatch(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dispatch: Dispatch) -&gt; RunResult {
         <span class="self">self</span>.prepare_for(<span class="kw-2">&amp;</span>dispatch);
 
         <span class="self">self</span>.gas_limits.insert(dispatch.id(), dispatch.gas_limit());
@@ -1672,7 +1694,8 @@
         }
     }
 
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>override_balance(<span class="kw-2">&amp;mut </span><span class="self">self</span>, id: <span class="kw-2">&amp;</span>ProgramId, balance: Balance) {
+    <span class="attr">#[track_caller]
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>override_balance(<span class="kw-2">&amp;mut </span><span class="self">self</span>, id: <span class="kw-2">&amp;</span>ProgramId, balance: Balance) {
         <span class="kw">if </span><span class="self">self</span>.is_user(id) &amp;&amp; balance &lt; <span class="kw">crate</span>::EXISTENTIAL_DEPOSIT {
             <span class="macro">panic!</span>(
                 <span class="string">&quot;An attempt to override balance with value ({}) less than existential deposit ({})&quot;</span>,
@@ -1685,7 +1708,8 @@
         <span class="kw-2">*</span>actor_balance = balance;
     }
 
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>read_memory_pages(<span class="kw-2">&amp;</span><span class="self">self</span>, program_id: <span class="kw-2">&amp;</span>ProgramId) -&gt; <span class="kw-2">&amp;</span>BTreeMap&lt;GearPage, PageBuf&gt; {
+    <span class="attr">#[track_caller]
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>read_memory_pages(<span class="kw-2">&amp;</span><span class="self">self</span>, program_id: <span class="kw-2">&amp;</span>ProgramId) -&gt; <span class="kw-2">&amp;</span>BTreeMap&lt;GearPage, PageBuf&gt; {
         <span class="kw">let </span>program = <span class="kw-2">&amp;</span><span class="self">self
             </span>.actors
             .get(program_id)
@@ -1704,7 +1728,8 @@
         }
     }
 
-    <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>override_memory_pages(
+    <span class="attr">#[track_caller]
+    </span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>override_memory_pages(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         program_id: <span class="kw-2">&amp;</span>ProgramId,
         memory_pages: BTreeMap&lt;GearPage, PageBuf&gt;,
@@ -1727,7 +1752,8 @@
         }
     }
 
-    <span class="kw">fn </span>prepare_for(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dispatch: <span class="kw-2">&amp;</span>Dispatch) {
+    <span class="attr">#[track_caller]
+    </span><span class="kw">fn </span>prepare_for(<span class="kw-2">&amp;mut </span><span class="self">self</span>, dispatch: <span class="kw-2">&amp;</span>Dispatch) {
         <span class="self">self</span>.msg_id = dispatch.id();
         <span class="self">self</span>.origin = dispatch.source();
         <span class="self">self</span>.log.clear();
@@ -1750,7 +1776,8 @@
         }
     }
 
-    <span class="kw">fn </span>init_success(<span class="kw-2">&amp;mut </span><span class="self">self</span>, message_id: MessageId, program_id: ProgramId) {
+    <span class="attr">#[track_caller]
+    </span><span class="kw">fn </span>init_success(<span class="kw-2">&amp;mut </span><span class="self">self</span>, message_id: MessageId, program_id: ProgramId) {
         <span class="kw">let </span>(actor, <span class="kw">_</span>) = <span class="self">self
             </span>.actors
             .get_mut(<span class="kw-2">&amp;</span>program_id)
@@ -1761,7 +1788,8 @@
         <span class="self">self</span>.move_waiting_msgs_to_queue(message_id, program_id);
     }
 
-    <span class="kw">fn </span>init_failure(<span class="kw-2">&amp;mut </span><span class="self">self</span>, message_id: MessageId, program_id: ProgramId) {
+    <span class="attr">#[track_caller]
+    </span><span class="kw">fn </span>init_failure(<span class="kw-2">&amp;mut </span><span class="self">self</span>, message_id: MessageId, program_id: ProgramId) {
         <span class="kw">let </span>(actor, <span class="kw">_</span>) = <span class="self">self
             </span>.actors
             .get_mut(<span class="kw-2">&amp;</span>program_id)
@@ -1782,6 +1810,7 @@
     }
 
     <span class="comment">// When called for the `dispatch`, it must be in queue.
+    </span><span class="attr">#[track_caller]
     </span><span class="kw">fn </span>check_is_for_wait_list(<span class="kw-2">&amp;</span><span class="self">self</span>, dispatch: <span class="kw-2">&amp;</span>StoredDispatch) -&gt; bool {
         <span class="kw">let </span>(actor, <span class="kw">_</span>) = <span class="self">self
             </span>.actors
@@ -1911,7 +1940,8 @@
         <span class="self">self</span>.process_dispatch(balance, <span class="prelude-val">None</span>, Default::default(), dispatch);
     }
 
-    <span class="kw">fn </span>process_dispatch(
+    <span class="attr">#[track_caller]
+    </span><span class="kw">fn </span>process_dispatch(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         balance: u128,
         data: <span class="prelude-ty">Option</span>&lt;(ExecutableActorData, InstrumentedCode)&gt;,
@@ -2113,7 +2143,8 @@
         }
     }
 
-    <span class="kw">fn </span>update_pages_data(
+    <span class="attr">#[track_caller]
+    </span><span class="kw">fn </span>update_pages_data(
         <span class="kw-2">&amp;mut </span><span class="self">self</span>,
         program_id: ProgramId,
         <span class="kw-2">mut </span>pages_data: BTreeMap&lt;GearPage, PageBuf&gt;,
@@ -2130,7 +2161,8 @@
         }
     }
 
-    <span class="kw">fn </span>update_allocations(<span class="kw-2">&amp;mut </span><span class="self">self</span>, program_id: ProgramId, allocations: BTreeSet&lt;WasmPage&gt;) {
+    <span class="attr">#[track_caller]
+    </span><span class="kw">fn </span>update_allocations(<span class="kw-2">&amp;mut </span><span class="self">self</span>, program_id: ProgramId, allocations: BTreeSet&lt;WasmPage&gt;) {
         <span class="kw">let </span>(actor, <span class="kw">_</span>) = <span class="self">self
             </span>.actors
             .get_mut(<span class="kw-2">&amp;</span>program_id)
@@ -2163,7 +2195,8 @@
         }
     }
 
-    <span class="kw">fn </span>send_value(<span class="kw-2">&amp;mut </span><span class="self">self</span>, from: ProgramId, to: <span class="prelude-ty">Option</span>&lt;ProgramId&gt;, value: Balance) {
+    <span class="attr">#[track_caller]
+    </span><span class="kw">fn </span>send_value(<span class="kw-2">&amp;mut </span><span class="self">self</span>, from: ProgramId, to: <span class="prelude-ty">Option</span>&lt;ProgramId&gt;, value: Balance) {
         <span class="kw">if </span>value == <span class="number">0 </span>{
             <span class="comment">// Nothing to do
             </span><span class="kw">return</span>;
@@ -2189,7 +2222,8 @@
         }
     }
 
-    <span class="kw">fn </span>store_new_programs(<span class="kw-2">&amp;mut </span><span class="self">self</span>, code_id: CodeId, candidates: Vec&lt;(MessageId, ProgramId)&gt;) {
+    <span class="attr">#[track_caller]
+    </span><span class="kw">fn </span>store_new_programs(<span class="kw-2">&amp;mut </span><span class="self">self</span>, code_id: CodeId, candidates: Vec&lt;(MessageId, ProgramId)&gt;) {
         <span class="kw">if let </span><span class="prelude-val">Some</span>(code) = <span class="self">self</span>.opt_binaries.get(<span class="kw-2">&amp;</span>code_id).cloned() {
             <span class="kw">for </span>(init_message_id, candidate_id) <span class="kw">in </span>candidates {
                 <span class="kw">if </span>!<span class="self">self</span>.actors.contains_key(<span class="kw-2">&amp;</span>candidate_id) {
@@ -2223,7 +2257,8 @@
         }
     }
 
-    <span class="kw">fn </span>stop_processing(<span class="kw-2">&amp;mut </span><span class="self">self</span>, _dispatch: StoredDispatch, _gas_burned: u64) {
+    <span class="attr">#[track_caller]
+    </span><span class="kw">fn </span>stop_processing(<span class="kw-2">&amp;mut </span><span class="self">self</span>, _dispatch: StoredDispatch, _gas_burned: u64) {
         <span class="macro">panic!</span>(<span class="string">&quot;Processing stopped. Used for on-chain logic only.&quot;</span>)
     }
 
@@ -2245,7 +2280,8 @@
     ) {
     }
 
-    <span class="kw">fn </span>update_gas_reservation(<span class="kw-2">&amp;mut </span><span class="self">self</span>, program_id: ProgramId, reserver: GasReserver) {
+    <span class="attr">#[track_caller]
+    </span><span class="kw">fn </span>update_gas_reservation(<span class="kw-2">&amp;mut </span><span class="self">self</span>, program_id: ProgramId, reserver: GasReserver) {
         <span class="kw">let </span>block_height = <span class="self">self</span>.block_info.height;
         <span class="kw">let </span>(actor, <span class="kw">_</span>) = <span class="self">self
             </span>.actors
