@@ -1,0 +1,3 @@
+(function() {var implementors = {
+"pallet_gear_gas":[["impl&lt;T: <a class=\"trait\" href=\"pallet_gear_gas/pallet/trait.Config.html\" title=\"trait pallet_gear_gas::pallet::Config\">Config</a>&gt; StorageInstance for <a class=\"struct\" href=\"pallet_gear_gas/migrations/v1/struct.GasNodesPrefix.html\" title=\"struct pallet_gear_gas::migrations::v1::GasNodesPrefix\">GasNodesPrefix</a>&lt;T&gt;"]]
+};if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()
