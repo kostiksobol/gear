@@ -7,10 +7,6 @@ on:
         type: boolean
         default: true
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 env:
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
@@ -23,6 +19,8 @@ jobs:
     runs-on: [kuberunner, github-runner-01]
     env:
       RUSTUP_HOME: /tmp/rustup_home
+      RUSTC_WRAPPER: sccache
+      SCCACHE_DIR: ${{ needs.prepair.outputs.sccache_path }}
     steps:
       - name: "ACTIONS: Checkout"
         uses: actions/checkout@v3
@@ -77,6 +75,8 @@ jobs:
     runs-on: [kuberunner, github-runner-01]
     env:
       RUSTUP_HOME: /tmp/rustup_home
+      RUSTC_WRAPPER: sccache
+      SCCACHE_DIR: ${{ needs.prepair.outputs.sccache_path }}
     steps:
       - name: Cancel Previous Runs
         if: ${{ github.event_name == 'pull_request' }}
