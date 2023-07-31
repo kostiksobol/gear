@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["MemoryAccessError","ProcessAccessError"],"struct":["MemoryAccessManager","WasmMemoryRead","WasmMemoryReadAs","WasmMemoryReadDecoded","WasmMemoryWrite","WasmMemoryWriteAs"],"trait":["MemoryAccessRecorder","MemoryOwner"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["TARGET"],"fn":["build","build_metawasm","build_with_metadata"],"mod":["optimize"],"struct":["WasmBuilder"]};
