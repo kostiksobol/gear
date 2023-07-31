@@ -85,12 +85,6 @@ impl From<Error> for HostError {
     }
 }
 
-/// Function pointer for specifying functions by the
-/// supervisor in [`EnvironmentDefinitionBuilder`].
-///
-/// [`EnvironmentDefinitionBuilder`]: struct.EnvironmentDefinitionBuilder.html
-pub type HostFuncType<T> = fn(&mut T, &[Value]) -> Result<ReturnValue, HostError>;
-
 /// Sandbox store.
 pub trait SandboxStore<T>: AsContext<T> {
     /// Create a new sandbox store.
