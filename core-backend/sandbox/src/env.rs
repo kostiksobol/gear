@@ -467,7 +467,7 @@ where
             .and_then(runtime::as_i64)
             .ok_or(System(WrongInjectedAllowance))?;
 
-        let (ext, _, termination_reason) = store
+        let (ext, termination_reason) = store
             .data_mut()
             .take()
             .unwrap_or_else(|| unreachable!("state must be set in Environment::new"))

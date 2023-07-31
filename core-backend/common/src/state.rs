@@ -26,14 +26,14 @@ pub struct State<Ext> {
     pub termination_reason: TerminationReason,
 }
 
-impl<Ext: BackendExternalities> BackendTermination<Ext, ()> for State<Ext> {
-    fn into_parts(self) -> (Ext, (), TerminationReason) {
+impl<Ext: BackendExternalities> BackendTermination<Ext> for State<Ext> {
+    fn into_parts(self) -> (Ext, TerminationReason) {
         let State {
             ext,
             termination_reason,
             ..
         } = self;
-        (ext, (), termination_reason)
+        (ext, termination_reason)
     }
 }
 

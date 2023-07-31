@@ -335,7 +335,7 @@ where
             .take()
             .unwrap_or_else(|| unreachable!("State must be set in `WasmiEnvironment::new`; qed"));
 
-        let (ext, _, termination_reason) = state.terminate(res, gas, allowance);
+        let (ext, termination_reason) = state.terminate(res, gas, allowance);
 
         Ok(BackendReport {
             termination_reason,
