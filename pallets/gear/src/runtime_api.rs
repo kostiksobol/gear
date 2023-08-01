@@ -288,7 +288,7 @@ where
         let instrumented_code = code_and_id.into_parts().0;
 
         let mut payload = argument.unwrap_or_default();
-        payload.append(&mut Self::read_state_impl(program_id)?);
+        payload.append(&mut Self::read_state_impl(program_id, Default::default())?);
 
         let block_info = BlockInfo {
             height: Self::block_number().unique_saturated_into(),
@@ -307,7 +307,7 @@ where
         )
     }
 
-    pub(crate) fn read_state_impl(program_id: ProgramId) -> Result<Vec<u8>, String> {
+    pub(crate) fn read_state_impl(program_id: ProgramId, payload: Vec<u8>) -> Result<Vec<u8>, String> {
         #[cfg(feature = "lazy-pages")]
         {
             let prefix = ProgramStorageOf::<T>::pages_final_prefix();
@@ -335,7 +335,7 @@ where
             program_pages,
             Some(allocations),
             Some(program_id),
-            Default::default(),
+            payload,
             BlockGasLimitOf::<T>::get() / 4,
             block_info,
         )
